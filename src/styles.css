@@ -1,0 +1,247 @@
+:root {
+  --bg-a: #f3e6c5;
+  --bg-b: #dbc59b;
+  --panel: rgba(255, 250, 238, 0.86);
+  --ink: #352615;
+  --muted: #6f5b3f;
+  --accent: #b65f2a;
+  --accent-soft: rgba(182, 95, 42, 0.25);
+  --good: #2f7f4f;
+  --shadow: 0 12px 30px rgba(45, 28, 13, 0.18);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  color: var(--ink);
+  font-family: "Palatino Linotype", "Book Antiqua", Palatino, serif;
+  background:
+    radial-gradient(circle at 12% 8%, rgba(255, 246, 220, 0.6), transparent 30%),
+    radial-gradient(circle at 90% 80%, rgba(143, 85, 34, 0.16), transparent 40%),
+    linear-gradient(130deg, var(--bg-a), var(--bg-b));
+}
+
+#root {
+  min-height: 100vh;
+}
+
+.app {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 24px 16px 40px;
+}
+
+.header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.eyebrow {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+h1 {
+  margin: 0.2rem 0 0;
+  font-family: "Baskerville", "Times New Roman", serif;
+  font-size: clamp(2.1rem, 5vw, 3.2rem);
+  letter-spacing: 0.03em;
+}
+
+h2 {
+  margin: 0 0 10px;
+  font-size: 1rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.button {
+  border: 1px solid rgba(80, 53, 29, 0.3);
+  border-radius: 999px;
+  background: rgba(255, 250, 236, 0.86);
+  color: var(--ink);
+  padding: 10px 16px;
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: transform 120ms ease, background-color 120ms ease;
+}
+
+.button:hover {
+  transform: translateY(-1px);
+  background-color: #fff8ea;
+}
+
+.status-panel {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.status-panel p {
+  margin: 0;
+  line-height: 1.5;
+}
+
+.turn-text {
+  font-weight: 700;
+}
+
+.status-text {
+  color: var(--muted);
+}
+
+.play-area {
+  margin-top: 16px;
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(280px, 520px) minmax(180px, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.reserve-panel,
+.board-wrap {
+  background: var(--panel);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  padding: 14px;
+}
+
+.reserves {
+  display: grid;
+  gap: 10px;
+}
+
+.reserve-stack {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border: 1px solid rgba(80, 53, 29, 0.22);
+  border-radius: 10px;
+  background: rgba(255, 252, 245, 0.8);
+  padding: 10px;
+  cursor: pointer;
+}
+
+.reserve-stack[disabled] {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.reserve-stack.active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.reserve-meta {
+  font-size: 0.84rem;
+  color: var(--muted);
+}
+
+.board {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(62px, 1fr));
+  gap: 10px;
+}
+
+.square {
+  position: relative;
+  aspect-ratio: 1 / 1;
+  border-radius: 11px;
+  border: 1px solid rgba(80, 53, 29, 0.3);
+  background:
+    linear-gradient(180deg, rgba(255, 253, 247, 0.95), rgba(248, 234, 202, 0.88));
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease;
+}
+
+.square:hover {
+  transform: translateY(-1px);
+}
+
+.square.target {
+  border-color: var(--good);
+  box-shadow: 0 0 0 3px rgba(47, 127, 79, 0.24);
+}
+
+.square.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.cup {
+  display: block;
+  border-radius: 50%;
+  border: 1px solid rgba(40, 24, 14, 0.35);
+  box-shadow:
+    inset 0 3px 8px rgba(255, 255, 255, 0.25),
+    inset 0 -6px 10px rgba(0, 0, 0, 0.2);
+}
+
+.cup.white {
+  background: radial-gradient(circle at 35% 32%, #fffef8 10%, #e7dcc9 70%, #d6cab4 100%);
+}
+
+.cup.black {
+  background: radial-gradient(circle at 35% 32%, #79624b 10%, #3c2f22 70%, #221a12 100%);
+}
+
+.size-4 {
+  width: 82%;
+  height: 82%;
+}
+
+.size-3 {
+  width: 70%;
+  height: 70%;
+}
+
+.size-2 {
+  width: 58%;
+  height: 58%;
+}
+
+.size-1 {
+  width: 46%;
+  height: 46%;
+}
+
+.stack-depth {
+  position: absolute;
+  right: 7px;
+  bottom: 6px;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.rules-note {
+  margin-top: 12px;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+@media (max-width: 880px) {
+  .play-area {
+    grid-template-columns: 1fr;
+  }
+
+  .reserve-panel {
+    order: 2;
+  }
+
+  .board-wrap {
+    order: 1;
+  }
+}
