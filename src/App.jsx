@@ -27,6 +27,24 @@ function App() {
     return `Turn: ${capitalize(game.turn)}`;
   }, [game.gameOver, game.turn]);
 
+  const selectedText = useMemo(() => {
+    if (!game.selected) {
+      return "No piece selected.";
+    }
+    if (game.selected.type === "board") {
+      return `Board cup size ${game.selected.size} selected.`;
+    }
+    return `Reserve stack ${game.selected.reserveIndex + 1} cup size ${game.selected.size} selected.`;
+  }, [game.selected]);
+
+  const reserveCounts = useMemo(
+    () => ({
+      white: game.reserves.white.reduce((sum, stack) => sum + stack.length, 0),
+      black: game.reserves.black.reduce((sum, stack) => sum + stack.length, 0),
+    }),
+    [game.reserves]
+  );
+
   const handleRestart = () => {
     setGame(createInitialGame());
   };
@@ -59,82 +77,102 @@ function App() {
 
   return (
     <main className="app">
-      <header className="header">
-        <div>
-          <p className="eyebrow">Board Game Prototype</p>
-          <h1>Goblett</h1>
-        </div>
-        <button type="button" className="button" onClick={handleRestart}>
-          New Game
-        </button>
-      </header>
-
-      <section className="status-panel">
-        <p className="turn-text">{turnText}</p>
-        <p className="status-text">{game.status}</p>
-      </section>
-
-      <section className="play-area">
-        <ReservePanel
-          color="white"
-          game={game}
-          onSelect={handleReserveClick}
-          title="White Reserves"
-        />
-
-        <section className="board-wrap">
-          <div className="board" role="grid" aria-label="Goblett board">
-            {game.board.map((stack, squareIndex) => {
-              const top = stack.length ? stack[stack.length - 1] : null;
-              const isSelectedBoardCup =
-                game.selected?.type === "board" &&
-                game.selected.squareIndex === squareIndex;
-
-              return (
-                <button
-                  key={squareIndex}
-                  type="button"
-                  role="gridcell"
-                  aria-label={`Square ${squareIndex + 1}`}
-                  className={[
-                    "square",
-                    legalTargetSet.has(squareIndex) ? "target" : "",
-                    isSelectedBoardCup ? "selected" : "",
-                  ]
-                    .filter(Boolean)
-                    .join(" ")}
-                  onClick={() => handleSquareClick(squareIndex)}
-                >
-                  {top && <div className={`cup ${top.color} size-${top.size}`} />}
-                  {stack.length > 0 && <div className="stack-depth">{stack.length}</div>}
-                </button>
-              );
-            })}
+      <div className="app-shell">
+        <header className="hero card fade-in-1">
+          <div>
+            <p className="eyebrow">Quiet Strategy Game</p>
+            <h1>Goblett</h1>
+            <p className="subtitle">A calm game of patience, positioning, and balance.</p>
           </div>
+          <div className="hero-actions">
+            <p className={`turn-badge ${game.turn}`}>{turnText}</p>
+            <button type="button" className="button" onClick={handleRestart}>
+              New Game
+            </button>
+          </div>
+        </header>
+
+        <section className="info-row fade-in-2">
+          <article className="status-panel card">
+            <p className="label">Status</p>
+            <p className="status-text">{game.status}</p>
+          </article>
+          <article className="status-panel card">
+            <p className="label">Selection</p>
+            <p className="status-text">{selectedText}</p>
+          </article>
         </section>
 
-        <ReservePanel
-          color="black"
-          game={game}
-          onSelect={handleReserveClick}
-          title="Black Reserves"
-        />
-      </section>
+        <section className="play-area fade-in-3">
+          <ReservePanel
+            color="white"
+            game={game}
+            onSelect={handleReserveClick}
+            title="White Reserves"
+            remaining={reserveCounts.white}
+          />
 
-      <section className="rules-note">
-        <p>
-          Reserve cups can cover an opponent stack only when that stack is part of a line with
-          exactly three opponent tops.
-        </p>
-      </section>
+          <section className="board-wrap card">
+            <div className="board-frame">
+              <div className="board" role="grid" aria-label="Goblett board">
+                {game.board.map((stack, squareIndex) => {
+                  const top = stack.length ? stack[stack.length - 1] : null;
+                  const isSelectedBoardCup =
+                    game.selected?.type === "board" &&
+                    game.selected.squareIndex === squareIndex;
+
+                  return (
+                    <button
+                      key={squareIndex}
+                      type="button"
+                      role="gridcell"
+                      aria-label={`Square ${squareIndex + 1}`}
+                      className={[
+                        "square",
+                        legalTargetSet.has(squareIndex) ? "target" : "",
+                        isSelectedBoardCup ? "selected" : "",
+                      ]
+                        .filter(Boolean)
+                        .join(" ")}
+                      onClick={() => handleSquareClick(squareIndex)}
+                    >
+                      {top && <div className={`cup ${top.color} size-${top.size}`} />}
+                      {stack.length > 0 && <div className="stack-depth">{stack.length}</div>}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </section>
+
+          <ReservePanel
+            color="black"
+            game={game}
+            onSelect={handleReserveClick}
+            title="Black Reserves"
+            remaining={reserveCounts.black}
+          />
+        </section>
+
+        <section className="rules-note card fade-in-4">
+          <p className="label">Special Rule</p>
+          <p>
+            Reserve cups can cover an opponent stack only when that stack is part of a line with
+            exactly three opponent tops.
+          </p>
+        </section>
+      </div>
     </main>
   );
 }
 
-function ReservePanel({ color, game, onSelect, title }) {
+function ReservePanel({ color, game, onSelect, title, remaining }) {
   return (
-    <aside className="reserve-panel" aria-label={`${title.toLowerCase()}`}>
-      <h2>{title}</h2>
+    <aside className={`reserve-panel card ${color}`} aria-label={`${title.toLowerCase()}`}>
+      <div className="reserve-header">
+        <h2>{title}</h2>
+        <span className="reserve-chip">{remaining} cups</span>
+      </div>
       <div className="reserves">
         {game.reserves[color].map((stack, index) => {
           const nextSize = stack[0];
@@ -152,14 +190,17 @@ function ReservePanel({ color, game, onSelect, title }) {
               disabled={isDisabled}
               onClick={() => onSelect(color, index)}
             >
-              <span>
+              <span className="reserve-cup">
                 {nextSize ? (
                   <span className={`cup ${color} size-${nextSize}`} aria-hidden="true" />
                 ) : (
                   <span className="reserve-meta">empty</span>
                 )}
               </span>
-              <span className="reserve-meta">{`Stack ${index + 1} (${stack.length} left)`}</span>
+              <span className="reserve-copy">
+                <strong>{`Stack ${index + 1}`}</strong>
+                <span className="reserve-meta">{`${stack.length} remaining`}</span>
+              </span>
             </button>
           );
         })}
