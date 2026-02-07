@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import Board3D from "./components/Board3D";
 
 const BOARD_SIZE = 4;
 const TOTAL_SQUARES = BOARD_SIZE * BOARD_SIZE;
@@ -113,35 +114,13 @@ function App() {
           />
 
           <section className="board-wrap card">
-            <div className="board-frame">
-              <div className="board" role="grid" aria-label="Goblett board">
-                {game.board.map((stack, squareIndex) => {
-                  const top = stack.length ? stack[stack.length - 1] : null;
-                  const isSelectedBoardCup =
-                    game.selected?.type === "board" &&
-                    game.selected.squareIndex === squareIndex;
-
-                  return (
-                    <button
-                      key={squareIndex}
-                      type="button"
-                      role="gridcell"
-                      aria-label={`Square ${squareIndex + 1}`}
-                      className={[
-                        "square",
-                        legalTargetSet.has(squareIndex) ? "target" : "",
-                        isSelectedBoardCup ? "selected" : "",
-                      ]
-                        .filter(Boolean)
-                        .join(" ")}
-                      onClick={() => handleSquareClick(squareIndex)}
-                    >
-                      {top && <div className={`cup ${top.color} size-${top.size}`} />}
-                      {stack.length > 0 && <div className="stack-depth">{stack.length}</div>}
-                    </button>
-                  );
-                })}
-              </div>
+            <div className="board-canvas" role="grid" aria-label="Goblett board">
+              <Board3D
+                board={game.board}
+                legalTargetSet={legalTargetSet}
+                selected={game.selected}
+                onSquareClick={handleSquareClick}
+              />
             </div>
           </section>
 
