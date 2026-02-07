@@ -27,12 +27,12 @@ function Board3D({ board, legalTargetSet, selected, onSquareClick }) {
       dpr={[1, 1.8]}
     >
       <SceneCamera />
-      <color attach="background" args={["#fdf8ee"]} />
-      <ambientLight intensity={1.2} />
-      <hemisphereLight args={["#fff6e6", "#e8d8bf", 0.48]} />
+      <color attach="background" args={["#f5f0ea"]} />
+      <ambientLight intensity={1.1} />
+      <hemisphereLight args={["#f5f0ea", "#ddd5c8", 0.5]} />
       <directionalLight
         position={[4.5, 9, 5]}
-        intensity={1.02}
+        intensity={0.9}
         castShadow
         shadow-bias={-0.0006}
         shadow-mapSize-width={1024}
@@ -44,7 +44,7 @@ function Board3D({ board, legalTargetSet, selected, onSquareClick }) {
         shadow-camera-top={7}
         shadow-camera-bottom={-7}
       />
-      <directionalLight position={[-4, 4, -3]} intensity={0.55} />
+      <directionalLight position={[-4, 4, -3]} intensity={0.45} />
       <BoardGroup
         board={board}
         legalTargetSet={legalTargetSet}
@@ -53,7 +53,7 @@ function Board3D({ board, legalTargetSet, selected, onSquareClick }) {
       />
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.18, 0]} receiveShadow>
         <planeGeometry args={[13, 13]} />
-        <shadowMaterial transparent opacity={0.08} />
+        <shadowMaterial transparent opacity={0.06} />
       </mesh>
     </Canvas>
   );
@@ -105,9 +105,9 @@ function BoardGroup({ board, legalTargetSet, selected, onSquareClick }) {
     <group>
       <mesh geometry={boardGeometry} receiveShadow>
         <meshStandardMaterial
-          color="#d4ae82"
-          roughness={0.52}
-          metalness={0.04}
+          color="#c4a882"
+          roughness={0.58}
+          metalness={0.02}
           side={THREE.DoubleSide}
           polygonOffset
           polygonOffsetFactor={1}
@@ -131,12 +131,12 @@ function BoardGroup({ board, legalTargetSet, selected, onSquareClick }) {
             }}
           >
             <meshStandardMaterial
-              color={isSelected ? "#f7efdf" : "#fffaf0"}
-              roughness={0.46}
-              metalness={0.02}
+              color={isSelected ? "#ece5d8" : "#f3ede3"}
+              roughness={0.5}
+              metalness={0.01}
               side={THREE.DoubleSide}
-              emissive={isTarget ? "#8a9f7d" : isSelected ? "#9a7a54" : "#000000"}
-              emissiveIntensity={isTarget ? 0.27 : isSelected ? 0.12 : 0}
+              emissive={isTarget ? "#7e9476" : isSelected ? "#8c7b6b" : "#000000"}
+              emissiveIntensity={isTarget ? 0.22 : isSelected ? 0.1 : 0}
             />
           </mesh>
         );
@@ -170,7 +170,7 @@ function BoardGroup({ board, legalTargetSet, selected, onSquareClick }) {
 function Cup3D({ x, z, size, color, selected, onClick }) {
   const spec = CUP_SPECS[size];
   const baseY = BOARD_DEPTH + TILE_DEPTH + spec.height / 2 + 0.015;
-  const cupColor = color === "white" ? "#f4edde" : "#5a4939";
+  const cupColor = color === "white" ? "#ebe4d6" : "#4a3f34";
 
   return (
     <group
@@ -184,10 +184,10 @@ function Cup3D({ x, z, size, color, selected, onClick }) {
         <cylinderGeometry args={[spec.radius, spec.radius, spec.height, 48]} />
         <meshStandardMaterial
           color={cupColor}
-          roughness={0.42}
-          metalness={0.03}
-          emissive={selected ? "#9a7a54" : "#000000"}
-          emissiveIntensity={selected ? 0.09 : 0}
+          roughness={0.48}
+          metalness={0.02}
+          emissive={selected ? "#8c7b6b" : "#000000"}
+          emissiveIntensity={selected ? 0.12 : 0}
         />
       </mesh>
     </group>
