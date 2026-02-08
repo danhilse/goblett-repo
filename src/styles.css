@@ -8,6 +8,7 @@
   --stone-light: #ddd5c8;
   --stone-dark: #342a22;
   --green: rgba(126, 148, 118, 0.45);
+  --green-soft: rgba(126, 148, 118, 0.28);
 }
 
 * {
@@ -172,7 +173,7 @@ h1 {
   border: none;
   background: none;
   cursor: pointer;
-  transition: transform 200ms ease, opacity 200ms ease;
+  transition: transform 200ms ease, opacity 200ms ease, filter 200ms ease;
 }
 
 .reserve-piece:hover:not(:disabled) {
@@ -186,6 +187,14 @@ h1 {
 
 .reserve-piece.active .stone {
   box-shadow: 0 0 0 2px var(--accent);
+}
+
+.reserve-piece.pickable:not(.active):not(:disabled) {
+  filter: drop-shadow(0 0 7px var(--green-soft));
+}
+
+.reserve-piece.pickable:not(.active):not(:disabled) .piece-count {
+  color: var(--text);
 }
 
 .reserve-piece.empty {

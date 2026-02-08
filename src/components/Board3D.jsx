@@ -20,6 +20,7 @@ const CUP_SPECS = {
 function Board3D({
   board,
   legalTargetSet,
+  movableSquareSet,
   selected,
   dragState,
   dragPreview,
@@ -58,6 +59,7 @@ function Board3D({
       <BoardGroup
         board={board}
         legalTargetSet={legalTargetSet}
+        movableSquareSet={movableSquareSet}
         selected={selected}
         dragState={dragState}
         dragPreview={dragPreview}
@@ -89,6 +91,7 @@ function SceneCamera() {
 function BoardGroup({
   board,
   legalTargetSet,
+  movableSquareSet,
   selected,
   dragState,
   dragPreview,
@@ -120,6 +123,14 @@ function BoardGroup({
     const geometry = new THREE.BoxGeometry(tileSize, TILE_DEPTH, tileSize, 1, 1, 1);
     return geometry;
   }, [tileSize]);
+  const targetDiscGeometry = useMemo(
+    () => new THREE.CircleGeometry(tileSize * 0.16, 28),
+    [tileSize]
+  );
+  const targetRingGeometry = useMemo(
+    () => new THREE.RingGeometry(tileSize * 0.22, tileSize * 0.3, 36),
+    [tileSize]
+  );
 
   const squareLayout = useMemo(() => buildSquareLayout(), []);
   const [dragPointer, setDragPointer] = useState(null);
@@ -130,6 +141,12 @@ function BoardGroup({
   const draggedBoardSquare =
     dragState.active && dragState.origin?.type === "board"
       ? dragState.origin.squareIndex
+      : null;
+  const hoveredDropSquare =
+    dragState.active &&
+    dragState.hoverSquare !== null &&
+    legalTargetSet.has(dragState.hoverSquare)
+      ? dragState.hoverSquare
       : null;
 
   useEffect(() => {
@@ -208,10 +225,19 @@ function BoardGroup({
       {dragState.active &&
       dragState.origin?.type === "board" &&
       dragPreview &&
-      dragPointer ? (
+      dragPointer &&
+      hoveredDropSquare === null ? (
         <DragPreviewCup
           x={dragPointer.x}
           z={dragPointer.z}
+          size={dragPreview.size}
+          color={dragPreview.color}
+        />
+      ) : null}
+      {dragState.active && dragPreview && hoveredDropSquare !== null ? (
+        <DropProjectionCup
+          x={squareLayout[hoveredDropSquare].x}
+          z={squareLayout[hoveredDropSquare].z}
           size={dragPreview.size}
           color={dragPreview.color}
         />
@@ -225,36 +251,75 @@ function BoardGroup({
         const hoveredLegal = isHovered && isTarget;
 
         return (
-          <mesh
-            key={`tile-${index}`}
-            geometry={tileGeometry}
-            position={[square.x, BOARD_DEPTH + TILE_DEPTH / 2 + 0.01, square.z]}
-            onPointerDown={(event) => {
-              event.stopPropagation();
-              onSquareClick(index);
-            }}
-          >
-            <meshStandardMaterial
-              color={isSelected ? "#e8e1d4" : isHovered ? "#f2e9db" : "#f8f4ed"}
-              roughness={0.5}
-              metalness={0.01}
-              side={THREE.DoubleSide}
-              emissive={
-                isHovered
-                  ? hoveredLegal
-                    ? "#90a97b"
-                    : "#a06f62"
-                  : isTarget
-                    ? "#7e9476"
-                    : isSelected
-                      ? "#8c7b6b"
-                      : "#000000"
-              }
-              emissiveIntensity={
-                isHovered ? (hoveredLegal ? 0.3 : 0.18) : isTarget ? 0.22 : isSelected ? 0.1 : 0
-              }
-            />
-          </mesh>
+          <group key={`tile-${index}`}>
+            <mesh
+              geometry={tileGeometry}
+              position={[square.x, BOARD_DEPTH + TILE_DEPTH / 2 + 0.01, square.z]}
+              onPointerDown={(event) => {
+                event.stopPropagation();
+                onSquareClick(index);
+              }}
+            >
+              <meshStandardMaterial
+                color={isSelected ? "#e8e1d4" : isHovered ? "#f2e9db" : "#f8f4ed"}
+                roughness={0.5}
+                metalness={0.01}
+                side={THREE.DoubleSide}
+                emissive={
+                  isHovered
+                    ? hoveredLegal
+                      ? "#90a97b"
+                      : "#a06f62"
+                    : isTarget
+                      ? "#7e9476"
+                      : isSelected
+                        ? "#8c7b6b"
+                        : "#000000"
+                }
+                emissiveIntensity={
+                  isHovered
+                    ? hoveredLegal
+                      ? 0.32
+                      : 0.18
+                    : isTarget
+                      ? 0.2
+                      : isSelected
+                        ? 0.1
+                        : 0
+                }
+              />
+            </mesh>
+            {isTarget ? (
+              <>
+                <mesh
+                  geometry={targetDiscGeometry}
+                  rotation={[-Math.PI / 2, 0, 0]}
+                  position={[square.x, BOARD_DEPTH + TILE_DEPTH + 0.018, square.z]}
+                  raycast={() => null}
+                >
+                  <meshBasicMaterial
+                    color={hoveredLegal ? "#b4cda1" : "#91ab82"}
+                    transparent
+                    opacity={hoveredLegal ? 0.64 : 0.38}
+                    depthWrite={false}
+                  />
+                </mesh>
+                <mesh
+                  geometry={targetRingGeometry}
+                  rotation={[-Math.PI / 2, 0, 0]}
+                  position={[square.x, BOARD_DEPTH + TILE_DEPTH + 0.02, square.z]}
+                  raycast={() => null}
+                >
+                  <meshBasicMaterial
+                    color={hoveredLegal ? "#ddeed1" : "#b4c9a4"}
+                    transparent
+                    opacity={hoveredLegal ? 0.9 : 0.48}
+                    depthWrite={false}
+                  />
+                </mesh>
+              </>
+            ) : null}
+          </group>
         );
       })}
 
@@ -266,6 +331,7 @@ function BoardGroup({
 
         const isSelected =
           selected?.type === "board" && selected.squareIndex === index;
+        const isPickable = movableSquareSet.has(index);
 
         return (
           <Cup3D
@@ -275,6 +341,7 @@ function BoardGroup({
             size={cup.size}
             color={cup.color}
             selected={isSelected}
+            pickable={isPickable}
             onPointerDown={(pointer) => onCupPointerDown(index, pointer)}
           />
         );
@@ -283,10 +350,11 @@ function BoardGroup({
   );
 }
 
-function Cup3D({ x, z, size, color, selected, onPointerDown }) {
+function Cup3D({ x, z, size, color, selected, pickable, onPointerDown }) {
   const spec = CUP_SPECS[size];
   const baseY = BOARD_DEPTH + TILE_DEPTH + spec.height / 2 + 0.015;
   const cupColor = color === "white" ? "#f5efe4" : "#302520";
+  const pickupGlow = pickable && !selected;
 
   return (
     <group
@@ -307,8 +375,59 @@ function Cup3D({ x, z, size, color, selected, onPointerDown }) {
           color={cupColor}
           roughness={0.48}
           metalness={0.02}
-          emissive={selected ? "#8c7b6b" : "#000000"}
-          emissiveIntensity={selected ? 0.12 : 0}
+          emissive={selected ? "#8c7b6b" : pickupGlow ? "#7f936f" : "#000000"}
+          emissiveIntensity={selected ? 0.12 : pickupGlow ? 0.15 : 0}
+        />
+      </mesh>
+      {pickupGlow ? (
+        <mesh
+          position={[0, -spec.height / 2 + 0.012, 0]}
+          rotation={[-Math.PI / 2, 0, 0]}
+          raycast={() => null}
+        >
+          <ringGeometry args={[spec.radius + 0.045, spec.radius + 0.075, 48]} />
+          <meshBasicMaterial
+            color="#9ab48a"
+            transparent
+            opacity={0.54}
+            depthWrite={false}
+          />
+        </mesh>
+      ) : null}
+    </group>
+  );
+}
+
+function DropProjectionCup({ x, z, size, color }) {
+  const spec = CUP_SPECS[size];
+  const baseY = BOARD_DEPTH + TILE_DEPTH + spec.height / 2 + 0.12;
+  const cupColor = color === "white" ? "#f5efe4" : "#302520";
+
+  return (
+    <group position={[x, baseY, z]}>
+      <mesh
+        position={[0, -spec.height / 2 + 0.008, 0]}
+        rotation={[-Math.PI / 2, 0, 0]}
+        raycast={() => null}
+      >
+        <ringGeometry args={[spec.radius + 0.05, spec.radius + 0.1, 48]} />
+        <meshBasicMaterial
+          color="#dceccf"
+          transparent
+          opacity={0.92}
+          depthWrite={false}
+        />
+      </mesh>
+      <mesh castShadow={false} raycast={() => null}>
+        <cylinderGeometry args={[spec.radius, spec.radius, spec.height, 48]} />
+        <meshStandardMaterial
+          color={cupColor}
+          roughness={0.44}
+          metalness={0.02}
+          transparent
+          opacity={0.84}
+          emissive="#b6cd9f"
+          emissiveIntensity={0.25}
         />
       </mesh>
     </group>
@@ -329,7 +448,7 @@ function DragPreviewCup({ x, z, size, color }) {
           roughness={0.42}
           metalness={0.03}
           transparent
-          opacity={0.88}
+          opacity={0.95}
           emissive="#7f6c5c"
           emissiveIntensity={0.14}
         />

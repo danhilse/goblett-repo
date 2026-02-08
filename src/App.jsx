@@ -18,6 +18,72 @@ function App() {
     }
     return new Set(legalTargetsForSelection(game, game.selected));
   }, [game]);
+  const movableBoardSquareSet = useMemo(() => {
+    if (game.gameOver) {
+      return new Set();
+    }
+
+    if (game.selected?.type === "board") {
+      return new Set([game.selected.squareIndex]);
+    }
+
+    if (game.selected?.type === "reserve") {
+      return new Set();
+    }
+
+    const movable = new Set();
+    for (let squareIndex = 0; squareIndex < TOTAL_SQUARES; squareIndex += 1) {
+      const top = getTopCup(game.board, squareIndex);
+      if (!top || top.color !== game.turn) {
+        continue;
+      }
+
+      const selection = {
+        type: "board",
+        squareIndex,
+        size: top.size,
+        color: top.color,
+      };
+      if (legalTargetsForSelection(game, selection).length > 0) {
+        movable.add(squareIndex);
+      }
+    }
+    return movable;
+  }, [game]);
+  const movableReserveByColor = useMemo(() => {
+    const movable = {
+      white: new Set(),
+      black: new Set(),
+    };
+
+    if (game.gameOver || game.selected?.type === "board") {
+      return movable;
+    }
+
+    if (game.selected?.type === "reserve") {
+      movable[game.selected.color].add(game.selected.reserveIndex);
+      return movable;
+    }
+
+    const currentColor = game.turn;
+    game.reserves[currentColor].forEach((stack, reserveIndex) => {
+      if (!stack.length) {
+        return;
+      }
+
+      const selection = {
+        type: "reserve",
+        color: currentColor,
+        reserveIndex,
+        size: stack[0],
+      };
+      if (legalTargetsForSelection(game, selection).length > 0) {
+        movable[currentColor].add(reserveIndex);
+      }
+    });
+
+    return movable;
+  }, [game]);
   const dragPreview = useMemo(() => {
     if (!dragState.active) {
       return null;
@@ -244,6 +310,7 @@ function App() {
         <ReserveColumn
           color="white"
           game={game}
+          pickableSet={movableReserveByColor.white}
           onSelect={handleReserveClick}
           onPointerDown={handleReservePointerDown}
         />
@@ -257,6 +324,7 @@ function App() {
             <Board3D
               board={game.board}
               legalTargetSet={legalTargetSet}
+              movableSquareSet={movableBoardSquareSet}
               selected={game.selected}
               dragState={dragState}
               dragPreview={dragPreview}
@@ -271,6 +339,7 @@ function App() {
         <ReserveColumn
           color="black"
           game={game}
+          pickableSet={movableReserveByColor.black}
           onSelect={handleReserveClick}
           onPointerDown={handleReservePointerDown}
         />
@@ -279,7 +348,9 @@ function App() {
       {dragState.active &&
       dragState.origin?.type === "reserve" &&
       dragPreview &&
-      dragState.pointer ? (
+      dragState.pointer &&
+      (dragState.hoverSquare === null ||
+        !legalTargetSet.has(dragState.hoverSquare)) ? (
         <div
           className="drag-cursor"
           style={{
@@ -302,7 +373,7 @@ function App() {
   );
 }
 
-function ReserveColumn({ color, game, onSelect, onPointerDown }) {
+function ReserveColumn({ color, game, pickableSet, onSelect, onPointerDown }) {
   return (
     <aside className={`reserve-col ${color}`} aria-label={`${color} reserves`}>
       <span className="reserve-label">{color}</span>
@@ -315,12 +386,13 @@ function ReserveColumn({ color, game, onSelect, onPointerDown }) {
             game.selected.color === color;
           const isDisabled =
             game.turn !== color || stack.length === 0 || Boolean(game.gameOver);
+          const isPickable = !isDisabled && pickableSet.has(index);
 
           return (
             <button
               key={`${color}-${index}`}
               type="button"
-              className={`reserve-piece ${isActive ? "active" : ""} ${!nextSize ? "empty" : ""}`}
+              className={`reserve-piece ${isActive ? "active" : ""} ${isPickable ? "pickable" : ""} ${!nextSize ? "empty" : ""}`}
               disabled={isDisabled}
               onPointerDown={(event) => {
                 if (isDisabled) {
