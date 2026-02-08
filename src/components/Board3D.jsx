@@ -1,5 +1,5 @@
 import { Canvas, useThree } from "@react-three/fiber";
-import { memo, useEffect, useMemo } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import * as THREE from "three";
 
 const BOARD_SIZE = 4;
@@ -11,25 +11,35 @@ const TILE_PADDING = 0.36;
 const TILE_DEPTH = 0.07;
 
 const CUP_SPECS = {
-  1: { radius: 0.14, height: 0.18 },
-  2: { radius: 0.24, height: 0.3 },
-  3: { radius: 0.34, height: 0.46 },
-  4: { radius: 0.46, height: 0.66 },
+  1: { radius: 0.14, height: 0.3 },
+  2: { radius: 0.24, height: 0.35 },
+  3: { radius: 0.34, height: 0.4 },
+  4: { radius: 0.46, height: 0.46 },
 };
 
-function Board3D({ board, legalTargetSet, selected, onSquareClick }) {
+function Board3D({
+  board,
+  legalTargetSet,
+  selected,
+  dragState,
+  dragPreview,
+  onSquareClick,
+  onSquareHover,
+  onSquareHoverEnd,
+  onCupPointerDown,
+}) {
   return (
     <Canvas
       shadows
       orthographic
-      camera={{ zoom: 74, near: 0.1, far: 80 }}
+      camera={{ zoom: 80, near: 0.1, far: 80 }}
       gl={{ antialias: true }}
       dpr={[1, 1.8]}
     >
       <SceneCamera />
-      <color attach="background" args={["#f5f0ea"]} />
-      <ambientLight intensity={1.1} />
-      <hemisphereLight args={["#f5f0ea", "#ddd5c8", 0.5]} />
+      <color attach="background" args={["#f4efe8"]} />
+      <ambientLight intensity={1.0} />
+      <hemisphereLight args={["#f5efe6", "#c8bfb2", 0.55]} />
       <directionalLight
         position={[4.5, 9, 5]}
         intensity={0.9}
@@ -49,11 +59,16 @@ function Board3D({ board, legalTargetSet, selected, onSquareClick }) {
         board={board}
         legalTargetSet={legalTargetSet}
         selected={selected}
+        dragState={dragState}
+        dragPreview={dragPreview}
         onSquareClick={onSquareClick}
+        onSquareHover={onSquareHover}
+        onSquareHoverEnd={onSquareHoverEnd}
+        onCupPointerDown={onCupPointerDown}
       />
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.18, 0]} receiveShadow>
         <planeGeometry args={[13, 13]} />
-        <shadowMaterial transparent opacity={0.06} />
+        <shadowMaterial transparent opacity={0.1} />
       </mesh>
     </Canvas>
   );
@@ -64,14 +79,27 @@ function SceneCamera() {
 
   useEffect(() => {
     camera.position.set(7.8, 8.2, 7.8);
-    camera.lookAt(0, 0.5, 0);
+    camera.lookAt(0, 0.3, 0);
     camera.updateProjectionMatrix();
   }, [camera]);
 
   return null;
 }
 
-function BoardGroup({ board, legalTargetSet, selected, onSquareClick }) {
+function BoardGroup({
+  board,
+  legalTargetSet,
+  selected,
+  dragState,
+  dragPreview,
+  onSquareClick,
+  onSquareHover,
+  onSquareHoverEnd,
+  onCupPointerDown,
+}) {
+  const playableSpan = BOARD_SPAN - TILE_PADDING * 2;
+  const tileSize = (playableSpan - TILE_GAP * (BOARD_SIZE - 1)) / BOARD_SIZE;
+
   const boardGeometry = useMemo(() => {
     const shape = roundedRectShape(BOARD_SPAN, BOARD_SPAN, BOARD_RADIUS);
     const geometry = new THREE.ExtrudeGeometry(shape, {
@@ -89,25 +117,87 @@ function BoardGroup({ board, legalTargetSet, selected, onSquareClick }) {
   }, []);
 
   const tileGeometry = useMemo(() => {
-    const playableSpan = BOARD_SPAN - TILE_PADDING * 2;
-    const tileSize = (playableSpan - TILE_GAP * (BOARD_SIZE - 1)) / BOARD_SIZE;
     const geometry = new THREE.BoxGeometry(tileSize, TILE_DEPTH, tileSize, 1, 1, 1);
     return geometry;
-  }, []);
+  }, [tileSize]);
 
   const squareLayout = useMemo(() => buildSquareLayout(), []);
+  const [dragPointer, setDragPointer] = useState(null);
   const topPieces = useMemo(
     () => board.map((stack) => (stack.length ? stack[stack.length - 1] : null)),
     [board]
   );
+  const draggedBoardSquare =
+    dragState.active && dragState.origin?.type === "board"
+      ? dragState.origin.squareIndex
+      : null;
+
+  useEffect(() => {
+    if (!dragState.active) {
+      setDragPointer(null);
+      return;
+    }
+
+    if (dragState.origin?.type !== "board") {
+      return;
+    }
+
+    if (
+      dragState.pointer?.boardX !== undefined &&
+      dragState.pointer?.boardZ !== undefined
+    ) {
+      setDragPointer({
+        x: dragState.pointer.boardX,
+        z: dragState.pointer.boardZ,
+      });
+      return;
+    }
+
+    const originSquare = squareLayout[dragState.origin.squareIndex];
+    if (!originSquare) {
+      return;
+    }
+
+    setDragPointer({ x: originSquare.x, z: originSquare.z });
+  }, [dragState.active, dragState.origin, dragState.pointer, squareLayout]);
 
   return (
     <group>
+      <mesh
+        position={[0, BOARD_DEPTH + TILE_DEPTH / 2 + 0.04, 0]}
+        rotation={[-Math.PI / 2, 0, 0]}
+        onPointerMove={(event) => {
+          if (dragState.active) {
+            setDragPointer({
+              x: event.point.x,
+              z: event.point.z,
+            });
+          }
+
+          const hoverIndex = getSquareIndexFromPoint(
+            event.point.x,
+            event.point.z,
+            playableSpan,
+            tileSize
+          );
+          if (hoverIndex === null) {
+            onSquareHoverEnd();
+            return;
+          }
+          onSquareHover(hoverIndex);
+        }}
+        onPointerLeave={onSquareHoverEnd}
+        onPointerCancel={onSquareHoverEnd}
+      >
+        <planeGeometry args={[playableSpan, playableSpan]} />
+        <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+      </mesh>
+
       <mesh geometry={boardGeometry} receiveShadow>
         <meshStandardMaterial
-          color="#c4a882"
-          roughness={0.58}
-          metalness={0.02}
+          color="#a68a64"
+          roughness={0.55}
+          metalness={0.03}
           side={THREE.DoubleSide}
           polygonOffset
           polygonOffsetFactor={1}
@@ -115,10 +205,24 @@ function BoardGroup({ board, legalTargetSet, selected, onSquareClick }) {
         />
       </mesh>
 
+      {dragState.active &&
+      dragState.origin?.type === "board" &&
+      dragPreview &&
+      dragPointer ? (
+        <DragPreviewCup
+          x={dragPointer.x}
+          z={dragPointer.z}
+          size={dragPreview.size}
+          color={dragPreview.color}
+        />
+      ) : null}
+
       {squareLayout.map((square, index) => {
         const isTarget = legalTargetSet.has(index);
         const isSelected =
           selected?.type === "board" && selected.squareIndex === index;
+        const isHovered = dragState.active && dragState.hoverSquare === index;
+        const hoveredLegal = isHovered && isTarget;
 
         return (
           <mesh
@@ -131,12 +235,24 @@ function BoardGroup({ board, legalTargetSet, selected, onSquareClick }) {
             }}
           >
             <meshStandardMaterial
-              color={isSelected ? "#ece5d8" : "#f3ede3"}
+              color={isSelected ? "#e8e1d4" : isHovered ? "#f2e9db" : "#f8f4ed"}
               roughness={0.5}
               metalness={0.01}
               side={THREE.DoubleSide}
-              emissive={isTarget ? "#7e9476" : isSelected ? "#8c7b6b" : "#000000"}
-              emissiveIntensity={isTarget ? 0.22 : isSelected ? 0.1 : 0}
+              emissive={
+                isHovered
+                  ? hoveredLegal
+                    ? "#90a97b"
+                    : "#a06f62"
+                  : isTarget
+                    ? "#7e9476"
+                    : isSelected
+                      ? "#8c7b6b"
+                      : "#000000"
+              }
+              emissiveIntensity={
+                isHovered ? (hoveredLegal ? 0.3 : 0.18) : isTarget ? 0.22 : isSelected ? 0.1 : 0
+              }
             />
           </mesh>
         );
@@ -144,7 +260,7 @@ function BoardGroup({ board, legalTargetSet, selected, onSquareClick }) {
 
       {squareLayout.map((square, index) => {
         const cup = topPieces[index];
-        if (!cup) {
+        if (!cup || index === draggedBoardSquare) {
           return null;
         }
 
@@ -159,7 +275,7 @@ function BoardGroup({ board, legalTargetSet, selected, onSquareClick }) {
             size={cup.size}
             color={cup.color}
             selected={isSelected}
-            onClick={() => onSquareClick(index)}
+            onPointerDown={(pointer) => onCupPointerDown(index, pointer)}
           />
         );
       })}
@@ -167,17 +283,22 @@ function BoardGroup({ board, legalTargetSet, selected, onSquareClick }) {
   );
 }
 
-function Cup3D({ x, z, size, color, selected, onClick }) {
+function Cup3D({ x, z, size, color, selected, onPointerDown }) {
   const spec = CUP_SPECS[size];
   const baseY = BOARD_DEPTH + TILE_DEPTH + spec.height / 2 + 0.015;
-  const cupColor = color === "white" ? "#ebe4d6" : "#4a3f34";
+  const cupColor = color === "white" ? "#f5efe4" : "#302520";
 
   return (
     <group
       position={[x, baseY, z]}
       onPointerDown={(event) => {
         event.stopPropagation();
-        onClick();
+        onPointerDown({
+          boardX: event.point.x,
+          boardZ: event.point.z,
+          x: event.nativeEvent.clientX,
+          y: event.nativeEvent.clientY,
+        });
       }}
     >
       <mesh castShadow receiveShadow>
@@ -192,6 +313,56 @@ function Cup3D({ x, z, size, color, selected, onClick }) {
       </mesh>
     </group>
   );
+}
+
+function DragPreviewCup({ x, z, size, color }) {
+  const spec = CUP_SPECS[size];
+  const baseY = BOARD_DEPTH + TILE_DEPTH + spec.height / 2 + 0.42;
+  const cupColor = color === "white" ? "#f5efe4" : "#302520";
+
+  return (
+    <group position={[x, baseY, z]}>
+      <mesh castShadow raycast={() => null}>
+        <cylinderGeometry args={[spec.radius, spec.radius, spec.height, 48]} />
+        <meshStandardMaterial
+          color={cupColor}
+          roughness={0.42}
+          metalness={0.03}
+          transparent
+          opacity={0.88}
+          emissive="#7f6c5c"
+          emissiveIntensity={0.14}
+        />
+      </mesh>
+    </group>
+  );
+}
+
+function getSquareIndexFromPoint(x, z, playableSpan, tileSize) {
+  const start = -playableSpan / 2;
+  const end = playableSpan / 2;
+
+  if (x < start || x > end || z < start || z > end) {
+    return null;
+  }
+
+  const step = tileSize + TILE_GAP;
+  const localX = x - start;
+  const localZ = z - start;
+  const col = Math.floor(localX / step);
+  const row = Math.floor(localZ / step);
+
+  if (row < 0 || row >= BOARD_SIZE || col < 0 || col >= BOARD_SIZE) {
+    return null;
+  }
+
+  const offsetX = localX - col * step;
+  const offsetZ = localZ - row * step;
+  if (offsetX > tileSize || offsetZ > tileSize) {
+    return null;
+  }
+
+  return row * BOARD_SIZE + col;
 }
 
 function buildSquareLayout() {

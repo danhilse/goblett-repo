@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Board3D from "./components/Board3D";
 
 const BOARD_SIZE = 4;
@@ -10,6 +10,7 @@ const LINES_BY_SQUARE = buildLinesBySquare();
 
 function App() {
   const [game, setGame] = useState(() => createInitialGame());
+  const [dragState, setDragState] = useState(() => createInactiveDragState());
 
   const legalTargetSet = useMemo(() => {
     if (!game.selected) {
@@ -17,6 +18,21 @@ function App() {
     }
     return new Set(legalTargetsForSelection(game, game.selected));
   }, [game]);
+  const dragPreview = useMemo(() => {
+    if (!dragState.active) {
+      return null;
+    }
+
+    const draggedSelection = resolveDraggedSelection(game, dragState.origin);
+    if (!draggedSelection) {
+      return null;
+    }
+
+    return {
+      size: draggedSelection.size,
+      color: draggedSelection.color,
+    };
+  }, [dragState.active, dragState.origin, game]);
 
   const turnText = useMemo(() => {
     if (game.gameOver?.type === "draw") {
@@ -38,9 +54,11 @@ function App() {
 
   const handleRestart = () => {
     setGame(createInitialGame());
+    setDragState(createInactiveDragState());
   };
 
   const handleSquareClick = (squareIndex) => {
+    setDragState(createInactiveDragState());
     setGame((current) => {
       if (current.gameOver) {
         return current;
@@ -63,8 +81,154 @@ function App() {
   };
 
   const handleReserveClick = (color, reserveIndex) => {
+    setDragState(createInactiveDragState());
     setGame((current) => selectReserveStack(current, color, reserveIndex));
   };
+
+  const handleSquareHover = (squareIndex) => {
+    setDragState((current) => {
+      if (!current.active || current.hoverSquare === squareIndex) {
+        return current;
+      }
+      return {
+        ...current,
+        hoverSquare: squareIndex,
+      };
+    });
+  };
+
+  const clearSquareHover = () => {
+    setDragState((current) => {
+      if (!current.active || current.hoverSquare === null) {
+        return current;
+      }
+      return {
+        ...current,
+        hoverSquare: null,
+      };
+    });
+  };
+
+  const handleCupPointerDown = (squareIndex, pointer) => {
+    if (game.gameOver) {
+      return;
+    }
+
+    const top = getTopCup(game.board, squareIndex);
+    if (!top || top.color !== game.turn) {
+      return;
+    }
+
+    const canUseCurrentSelection =
+      game.selected?.type === "board" &&
+      game.selected.squareIndex === squareIndex;
+    if (game.selected && !canUseCurrentSelection) {
+      return;
+    }
+
+    const selection = {
+      type: "board",
+      squareIndex,
+      size: top.size,
+      color: top.color,
+    };
+    const legalTargets = legalTargetsForSelection(game, selection);
+    if (!canUseCurrentSelection) {
+      setGame((current) => selectBoardCup(current, squareIndex));
+    }
+
+    if (!legalTargets.length) {
+      return;
+    }
+
+    setDragState({
+      active: true,
+      origin: {
+        type: "board",
+        squareIndex,
+      },
+      hoverSquare: null,
+      pointer,
+    });
+  };
+
+  const handleReservePointerDown = (color, reserveIndex, pointer) => {
+    if (
+      game.gameOver ||
+      color !== game.turn ||
+      game.selected?.type === "board"
+    ) {
+      return;
+    }
+
+    const stack = game.reserves[color][reserveIndex];
+    if (!stack.length) {
+      return;
+    }
+
+    const selection = {
+      type: "reserve",
+      color,
+      reserveIndex,
+      size: stack[0],
+    };
+    const legalTargets = legalTargetsForSelection(game, selection);
+    setGame((current) => selectReserveStack(current, color, reserveIndex));
+
+    if (!legalTargets.length) {
+      return;
+    }
+
+    setDragState({
+      active: true,
+      origin: {
+        type: "reserve",
+        color,
+        reserveIndex,
+      },
+      hoverSquare: null,
+      pointer,
+    });
+  };
+
+  useEffect(() => {
+    if (!dragState.active) {
+      return undefined;
+    }
+
+    const handlePointerUp = () => {
+      setGame((current) => completeDragMove(current, dragState));
+      setDragState(createInactiveDragState());
+    };
+
+    window.addEventListener("pointerup", handlePointerUp);
+    return () => window.removeEventListener("pointerup", handlePointerUp);
+  }, [dragState]);
+
+  useEffect(() => {
+    if (!dragState.active || dragState.origin?.type !== "reserve") {
+      return undefined;
+    }
+
+    const handlePointerMove = (event) => {
+      setDragState((current) => {
+        if (!current.active || current.origin?.type !== "reserve") {
+          return current;
+        }
+
+        return {
+          ...current,
+          pointer: {
+            x: event.clientX,
+            y: event.clientY,
+          },
+        };
+      });
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    return () => window.removeEventListener("pointermove", handlePointerMove);
+  }, [dragState.active, dragState.origin]);
 
   return (
     <main className="app">
@@ -81,15 +245,25 @@ function App() {
           color="white"
           game={game}
           onSelect={handleReserveClick}
+          onPointerDown={handleReservePointerDown}
         />
 
         <section className="board-stage">
-          <div className="board-canvas" role="grid" aria-label="Goblett board">
+          <div
+            className={`board-canvas ${dragState.active ? "dragging" : ""}`}
+            role="grid"
+            aria-label="Goblett board"
+          >
             <Board3D
               board={game.board}
               legalTargetSet={legalTargetSet}
               selected={game.selected}
+              dragState={dragState}
+              dragPreview={dragPreview}
               onSquareClick={handleSquareClick}
+              onSquareHover={handleSquareHover}
+              onSquareHoverEnd={clearSquareHover}
+              onCupPointerDown={handleCupPointerDown}
             />
           </div>
         </section>
@@ -98,8 +272,25 @@ function App() {
           color="black"
           game={game}
           onSelect={handleReserveClick}
+          onPointerDown={handleReservePointerDown}
         />
       </div>
+
+      {dragState.active &&
+      dragState.origin?.type === "reserve" &&
+      dragPreview &&
+      dragState.pointer ? (
+        <div
+          className="drag-cursor"
+          style={{
+            left: `${dragState.pointer.x}px`,
+            top: `${dragState.pointer.y}px`,
+          }}
+          aria-hidden="true"
+        >
+          <span className={`stone ${dragPreview.color} size-${dragPreview.size}`} />
+        </div>
+      ) : null}
 
       <footer className="footer fade-in-3">
         <p className="status-line">{game.status}</p>
@@ -111,7 +302,7 @@ function App() {
   );
 }
 
-function ReserveColumn({ color, game, onSelect }) {
+function ReserveColumn({ color, game, onSelect, onPointerDown }) {
   return (
     <aside className={`reserve-col ${color}`} aria-label={`${color} reserves`}>
       <span className="reserve-label">{color}</span>
@@ -131,6 +322,16 @@ function ReserveColumn({ color, game, onSelect }) {
               type="button"
               className={`reserve-piece ${isActive ? "active" : ""} ${!nextSize ? "empty" : ""}`}
               disabled={isDisabled}
+              onPointerDown={(event) => {
+                if (isDisabled) {
+                  return;
+                }
+                event.preventDefault();
+                onPointerDown(color, index, {
+                  x: event.clientX,
+                  y: event.clientY,
+                });
+              }}
               onClick={() => onSelect(color, index)}
               aria-label={`Stack ${index + 1}, ${stack.length} remaining`}
             >
@@ -158,7 +359,7 @@ function createInitialGame() {
     turn: "white",
     selected: null,
     gameOver: null,
-    status: "Select a reserve stack or tap a cup you control.",
+    status: "Select or drag a reserve stack, or drag a cup you control.",
     repetitionCount: {},
   };
 
@@ -195,7 +396,7 @@ function selectBoardCup(game, squareIndex) {
   return {
     ...game,
     selected: selection,
-    status: "Cup touched. It must move to another square this turn.",
+    status: "Cup selected. Drag or tap a destination square.",
   };
 }
 
@@ -234,7 +435,7 @@ function selectReserveStack(game, color, reserveIndex) {
   return {
     ...game,
     selected: selection,
-    status: "Choose a square for this cup.",
+    status: "Reserve cup selected. Drag or tap a destination square.",
   };
 }
 
@@ -307,6 +508,37 @@ function executeMove(game, targetIndex) {
     ...nextTurnGame,
     repetitionCount,
   };
+}
+
+function completeDragMove(game, dragState) {
+  if (!dragState.active || dragState.hoverSquare === null || game.gameOver) {
+    return game;
+  }
+
+  const draggedSelection = resolveDraggedSelection(game, dragState.origin);
+  if (!draggedSelection) {
+    return game;
+  }
+
+  const activeSelection = selectionsMatch(game.selected, draggedSelection)
+    ? game.selected
+    : draggedSelection;
+  const legalTargets = legalTargetsForSelection(game, activeSelection);
+
+  if (!legalTargets.includes(dragState.hoverSquare)) {
+    return {
+      ...game,
+      selected: activeSelection,
+    };
+  }
+
+  return executeMove(
+    {
+      ...game,
+      selected: activeSelection,
+    },
+    dragState.hoverSquare
+  );
 }
 
 function legalTargetsForSelection(game, selection) {
@@ -394,6 +626,55 @@ function getTopCup(board, squareIndex) {
   return stack.length ? stack[stack.length - 1] : null;
 }
 
+function resolveDraggedSelection(game, origin) {
+  if (!origin) {
+    return null;
+  }
+
+  if (origin.type === "board") {
+    const top = getTopCup(game.board, origin.squareIndex);
+    if (!top || top.color !== game.turn) {
+      return null;
+    }
+
+    return {
+      type: "board",
+      squareIndex: origin.squareIndex,
+      size: top.size,
+      color: top.color,
+    };
+  }
+
+  const stack = game.reserves[origin.color][origin.reserveIndex];
+  if (
+    !stack.length ||
+    origin.color !== game.turn
+  ) {
+    return null;
+  }
+
+  return {
+    type: "reserve",
+    color: origin.color,
+    reserveIndex: origin.reserveIndex,
+    size: stack[0],
+  };
+}
+
+function selectionsMatch(left, right) {
+  if (!left || !right || left.type !== right.type) {
+    return false;
+  }
+
+  if (left.type === "board") {
+    return left.squareIndex === right.squareIndex;
+  }
+
+  return (
+    left.color === right.color && left.reserveIndex === right.reserveIndex
+  );
+}
+
 function otherPlayer(color) {
   return color === "white" ? "black" : "white";
 }
@@ -440,6 +721,15 @@ function buildWinningLines() {
 
 function capitalize(text) {
   return text[0].toUpperCase() + text.slice(1);
+}
+
+function createInactiveDragState() {
+  return {
+    active: false,
+    origin: null,
+    hoverSquare: null,
+    pointer: null,
+  };
 }
 
 export default App;
