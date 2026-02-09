@@ -109,6 +109,15 @@ function App() {
     }
     return capitalize(game.turn);
   }, [game.gameOver, game.turn]);
+  const gameOverHeading = useMemo(() => {
+    if (!game.gameOver) {
+      return "";
+    }
+    if (game.gameOver.type === "draw") {
+      return "Game over: draw";
+    }
+    return `Game over: ${capitalize(game.gameOver.winner)} wins`;
+  }, [game.gameOver]);
 
   const reserveCounts = useMemo(
     () => ({
@@ -297,7 +306,7 @@ function App() {
   }, [dragState.active, dragState.origin]);
 
   return (
-    <main className="app">
+    <main className={`app ${game.gameOver ? "game-ended" : ""}`}>
       <header className="header fade-in-1">
         <h1>Goblett</h1>
         <div className="header-status">
@@ -305,6 +314,14 @@ function App() {
           <span className="turn-label">{turnText}</span>
         </div>
       </header>
+
+      {game.gameOver ? (
+        <section className="game-over-banner fade-in-2" role="alert" aria-live="assertive">
+          <p className="game-over-kicker">Game over</p>
+          <p className="game-over-title">{turnText}</p>
+          <p className="game-over-note">Press Play again to start a new match.</p>
+        </section>
+      ) : null}
 
       <div className="arena fade-in-2">
         <ReserveColumn
@@ -315,7 +332,7 @@ function App() {
           onPointerDown={handleReservePointerDown}
         />
 
-        <section className="board-stage">
+        <section className={`board-stage ${game.gameOver ? "game-over" : ""}`}>
           <div
             className={`board-canvas ${dragState.active ? "dragging" : ""}`}
             role="grid"
@@ -334,6 +351,12 @@ function App() {
               onCupPointerDown={handleCupPointerDown}
             />
           </div>
+          {game.gameOver ? (
+            <div className="board-game-over-overlay" role="status" aria-label={gameOverHeading}>
+              <span className="board-game-over-label">Game over</span>
+              <strong>{turnText}</strong>
+            </div>
+          ) : null}
         </section>
 
         <ReserveColumn
@@ -365,7 +388,11 @@ function App() {
 
       <footer className="footer fade-in-3">
         <p className="status-line">{game.status}</p>
-        <button type="button" className="restart-btn" onClick={handleRestart}>
+        <button
+          type="button"
+          className={`restart-btn ${game.gameOver ? "prominent" : ""}`}
+          onClick={handleRestart}
+        >
           {game.gameOver ? "Play again" : "Restart"}
         </button>
       </footer>

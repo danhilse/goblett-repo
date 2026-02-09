@@ -38,12 +38,12 @@ function Board3D({
       dpr={[1, 1.8]}
     >
       <SceneCamera />
-      <color attach="background" args={["#f4efe8"]} />
-      <ambientLight intensity={1.0} />
-      <hemisphereLight args={["#f5efe6", "#c8bfb2", 0.55]} />
+      <color attach="background" args={["#fcf8f1"]} />
+      <ambientLight intensity={0.86} />
+      <hemisphereLight args={["#fff9ef", "#b8a791", 0.74]} />
       <directionalLight
         position={[4.5, 9, 5]}
-        intensity={0.9}
+        intensity={1.08}
         castShadow
         shadow-bias={-0.0006}
         shadow-mapSize-width={1024}
@@ -55,7 +55,7 @@ function Board3D({
         shadow-camera-top={7}
         shadow-camera-bottom={-7}
       />
-      <directionalLight position={[-4, 4, -3]} intensity={0.45} />
+      <directionalLight position={[-4, 4, -3]} intensity={0.62} />
       <BoardGroup
         board={board}
         legalTargetSet={legalTargetSet}
@@ -70,7 +70,7 @@ function Board3D({
       />
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.18, 0]} receiveShadow>
         <planeGeometry args={[13, 13]} />
-        <shadowMaterial transparent opacity={0.1} />
+        <shadowMaterial transparent opacity={0.15} />
       </mesh>
     </Canvas>
   );
@@ -212,8 +212,8 @@ function BoardGroup({
 
       <mesh geometry={boardGeometry} receiveShadow>
         <meshStandardMaterial
-          color="#a68a64"
-          roughness={0.55}
+          color="#b89461"
+          roughness={0.48}
           metalness={0.03}
           side={THREE.DoubleSide}
           polygonOffset
@@ -261,30 +261,30 @@ function BoardGroup({
               }}
             >
               <meshStandardMaterial
-                color={isSelected ? "#e8e1d4" : isHovered ? "#f2e9db" : "#f8f4ed"}
-                roughness={0.5}
+                color={isSelected ? "#f0e3d1" : isHovered ? "#faf0df" : "#fff9ee"}
+                roughness={0.42}
                 metalness={0.01}
                 side={THREE.DoubleSide}
                 emissive={
                   isHovered
                     ? hoveredLegal
-                      ? "#90a97b"
-                      : "#a06f62"
+                      ? "#87a06f"
+                      : "#a06a5b"
                     : isTarget
-                      ? "#7e9476"
+                      ? "#6f8960"
                       : isSelected
-                        ? "#8c7b6b"
+                        ? "#8b7159"
                         : "#000000"
                 }
                 emissiveIntensity={
                   isHovered
                     ? hoveredLegal
-                      ? 0.32
-                      : 0.18
+                      ? 0.4
+                      : 0.24
                     : isTarget
-                      ? 0.2
+                      ? 0.28
                       : isSelected
-                        ? 0.1
+                        ? 0.15
                         : 0
                 }
               />
@@ -298,9 +298,9 @@ function BoardGroup({
                   raycast={() => null}
                 >
                   <meshBasicMaterial
-                    color={hoveredLegal ? "#b4cda1" : "#91ab82"}
+                    color={hoveredLegal ? "#bbd3a4" : "#88a274"}
                     transparent
-                    opacity={hoveredLegal ? 0.64 : 0.38}
+                    opacity={hoveredLegal ? 0.74 : 0.44}
                     depthWrite={false}
                   />
                 </mesh>
@@ -311,9 +311,9 @@ function BoardGroup({
                   raycast={() => null}
                 >
                   <meshBasicMaterial
-                    color={hoveredLegal ? "#ddeed1" : "#b4c9a4"}
+                    color={hoveredLegal ? "#e3efd3" : "#b6cb9f"}
                     transparent
-                    opacity={hoveredLegal ? 0.9 : 0.48}
+                    opacity={hoveredLegal ? 0.94 : 0.6}
                     depthWrite={false}
                   />
                 </mesh>
@@ -353,7 +353,7 @@ function BoardGroup({
 function Cup3D({ x, z, size, color, selected, pickable, onPointerDown }) {
   const spec = CUP_SPECS[size];
   const baseY = BOARD_DEPTH + TILE_DEPTH + spec.height / 2 + 0.015;
-  const cupColor = color === "white" ? "#f5efe4" : "#302520";
+  const cupColor = color === "white" ? "#fff6e8" : "#261d17";
   const pickupGlow = pickable && !selected;
 
   return (
@@ -373,10 +373,10 @@ function Cup3D({ x, z, size, color, selected, pickable, onPointerDown }) {
         <cylinderGeometry args={[spec.radius, spec.radius, spec.height, 48]} />
         <meshStandardMaterial
           color={cupColor}
-          roughness={0.48}
+          roughness={0.42}
           metalness={0.02}
-          emissive={selected ? "#8c7b6b" : pickupGlow ? "#7f936f" : "#000000"}
-          emissiveIntensity={selected ? 0.12 : pickupGlow ? 0.15 : 0}
+          emissive={selected ? "#89694d" : pickupGlow ? "#758f5f" : "#000000"}
+          emissiveIntensity={selected ? 0.18 : pickupGlow ? 0.22 : 0}
         />
       </mesh>
       {pickupGlow ? (
@@ -387,9 +387,9 @@ function Cup3D({ x, z, size, color, selected, pickable, onPointerDown }) {
         >
           <ringGeometry args={[spec.radius + 0.045, spec.radius + 0.075, 48]} />
           <meshBasicMaterial
-            color="#9ab48a"
+            color="#a6c38c"
             transparent
-            opacity={0.54}
+            opacity={0.66}
             depthWrite={false}
           />
         </mesh>
@@ -401,7 +401,7 @@ function Cup3D({ x, z, size, color, selected, pickable, onPointerDown }) {
 function DropProjectionCup({ x, z, size, color }) {
   const spec = CUP_SPECS[size];
   const baseY = BOARD_DEPTH + TILE_DEPTH + spec.height / 2 + 0.12;
-  const cupColor = color === "white" ? "#f5efe4" : "#302520";
+  const cupColor = color === "white" ? "#fff6e8" : "#261d17";
 
   return (
     <group position={[x, baseY, z]}>
@@ -412,9 +412,9 @@ function DropProjectionCup({ x, z, size, color }) {
       >
         <ringGeometry args={[spec.radius + 0.05, spec.radius + 0.1, 48]} />
         <meshBasicMaterial
-          color="#dceccf"
+          color="#e7f4d5"
           transparent
-          opacity={0.92}
+          opacity={0.96}
           depthWrite={false}
         />
       </mesh>
@@ -422,12 +422,12 @@ function DropProjectionCup({ x, z, size, color }) {
         <cylinderGeometry args={[spec.radius, spec.radius, spec.height, 48]} />
         <meshStandardMaterial
           color={cupColor}
-          roughness={0.44}
+          roughness={0.38}
           metalness={0.02}
           transparent
           opacity={0.84}
-          emissive="#b6cd9f"
-          emissiveIntensity={0.25}
+          emissive="#b2cb94"
+          emissiveIntensity={0.34}
         />
       </mesh>
     </group>
@@ -437,7 +437,7 @@ function DropProjectionCup({ x, z, size, color }) {
 function DragPreviewCup({ x, z, size, color }) {
   const spec = CUP_SPECS[size];
   const baseY = BOARD_DEPTH + TILE_DEPTH + spec.height / 2 + 0.42;
-  const cupColor = color === "white" ? "#f5efe4" : "#302520";
+  const cupColor = color === "white" ? "#fff6e8" : "#261d17";
 
   return (
     <group position={[x, baseY, z]}>
@@ -445,12 +445,12 @@ function DragPreviewCup({ x, z, size, color }) {
         <cylinderGeometry args={[spec.radius, spec.radius, spec.height, 48]} />
         <meshStandardMaterial
           color={cupColor}
-          roughness={0.42}
+          roughness={0.36}
           metalness={0.03}
           transparent
           opacity={0.95}
-          emissive="#7f6c5c"
-          emissiveIntensity={0.14}
+          emissive="#8a6f55"
+          emissiveIntensity={0.2}
         />
       </mesh>
     </group>
