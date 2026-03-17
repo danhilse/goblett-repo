@@ -726,6 +726,7 @@ function completeDragMove(game, dragState) {
     return {
       ...game,
       selected: activeSelection,
+      status: "Illegal target for the selected cup.",
     };
   }
 
@@ -776,18 +777,91 @@ function legalTargetsForSelection(game, selection) {
 function reserveCoverThreatExists(game, opponentColor, targetIndex) {
   for (const line of LINES_BY_SQUARE[targetIndex]) {
     let count = 0;
+    let winningSquare = null;
     for (const index of line) {
       const top = getTopCup(game.board, index);
       if (top && top.color === opponentColor) {
         count += 1;
+        continue;
       }
+      winningSquare = index;
     }
-    if (count === BOARD_SIZE - 1) {
+    if (
+      count === BOARD_SIZE - 1 &&
+      winningSquare !== null &&
+      playerHasWinningMoveToSquare(game, opponentColor, winningSquare)
+    ) {
       return true;
     }
   }
 
   return false;
+}
+
+function playerHasWinningMoveToSquare(game, color, targetIndex) {
+  if (playerCanWinByBoardMove(game.board, color, targetIndex)) {
+    return true;
+  }
+
+  return playerCanWinByReserveMove(game, color, targetIndex);
+}
+
+function playerCanWinByBoardMove(board, color, targetIndex) {
+  for (let sourceIndex = 0; sourceIndex < TOTAL_SQUARES; sourceIndex += 1) {
+    const top = getTopCup(board, sourceIndex);
+    if (!top || top.color !== color || sourceIndex === targetIndex) {
+      continue;
+    }
+
+    if (!canCover(board, top.size, targetIndex)) {
+      continue;
+    }
+
+    if (createsWinningLineAfterMove(board, color, top.size, targetIndex, sourceIndex)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function playerCanWinByReserveMove(game, color, targetIndex) {
+  if (getTopCup(game.board, targetIndex)) {
+    return false;
+  }
+
+  for (const stack of game.reserves[color]) {
+    if (!stack.length) {
+      continue;
+    }
+
+    if (createsWinningLineAfterMove(game.board, color, stack[0], targetIndex)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function createsWinningLineAfterMove(
+  board,
+  color,
+  movingSize,
+  targetIndex,
+  sourceIndex = null
+) {
+  const nextBoard = board.map((stack) => [...stack]);
+
+  if (sourceIndex !== null) {
+    nextBoard[sourceIndex].pop();
+  }
+
+  nextBoard[targetIndex].push({
+    color,
+    size: movingSize,
+  });
+
+  return hasLine({ board: nextBoard }, color);
 }
 
 function hasLine(game, color) {
