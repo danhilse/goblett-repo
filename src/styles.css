@@ -65,6 +65,7 @@ body {
   align-items: baseline;
   justify-content: space-between;
   padding: 0 4px;
+  gap: 16px;
 }
 
 .header-controls {
@@ -80,6 +81,13 @@ h1 {
   font-size: 2rem;
   letter-spacing: 0.06em;
   color: var(--text);
+}
+
+.subhead {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 0.86rem;
+  letter-spacing: 0.02em;
 }
 
 .header-status {
@@ -129,6 +137,144 @@ h1 {
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--muted);
+}
+
+.match-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px 18px;
+  border-radius: 16px;
+  border: 1px solid rgba(95, 73, 54, 0.14);
+  background:
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.52), transparent 34%),
+    linear-gradient(135deg, rgba(95, 73, 54, 0.08), rgba(95, 73, 54, 0.03));
+}
+
+.mode-toggle {
+  display: inline-flex;
+  align-self: flex-start;
+  padding: 4px;
+  border-radius: 999px;
+  background: rgba(95, 73, 54, 0.1);
+}
+
+.mode-btn,
+.room-btn {
+  border: 1px solid rgba(95, 73, 54, 0.2);
+  background: rgba(252, 248, 241, 0.84);
+  color: var(--text);
+  font-family: "DM Sans", system-ui, sans-serif;
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: border-color 180ms ease, background 180ms ease, color 180ms ease;
+}
+
+.mode-btn {
+  min-width: 98px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border-color: transparent;
+  background: transparent;
+}
+
+.mode-btn.active {
+  background: var(--surface);
+  border-color: rgba(95, 73, 54, 0.22);
+}
+
+.room-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.room-actions,
+.room-session {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.room-session {
+  padding: 2px 0;
+}
+
+.room-session-actions,
+.join-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.room-btn {
+  padding: 9px 14px;
+  border-radius: 10px;
+}
+
+.room-btn.primary {
+  background: rgba(95, 73, 54, 0.12);
+  border-color: rgba(95, 73, 54, 0.32);
+}
+
+.room-btn:hover:not(:disabled),
+.mode-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.room-btn:disabled,
+.mode-btn:disabled,
+.restart-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.room-input {
+  min-width: 120px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(95, 73, 54, 0.2);
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--text);
+  font-family: "DM Sans", system-ui, sans-serif;
+  font-size: 0.86rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.room-kicker {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.62rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.room-code,
+.room-meta,
+.match-note {
+  margin: 4px 0 0;
+}
+
+.room-code {
+  font-family: "Cormorant Garamond", Georgia, serif;
+  font-size: 1.3rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.room-meta {
+  color: var(--text);
+  font-size: 0.9rem;
+}
+
+.match-note {
+  color: var(--muted);
+  font-size: 0.86rem;
 }
 
 /* ── arena ── */
@@ -190,6 +336,10 @@ h1 {
   height: 100%;
 }
 
+.board-canvas.locked {
+  cursor: default;
+}
+
 .board-canvas.dragging {
   cursor: grabbing;
 }
@@ -213,6 +363,20 @@ h1 {
   text-align: center;
   pointer-events: none;
   background: rgba(252, 248, 241, 0.56);
+  backdrop-filter: blur(2px);
+}
+
+.board-room-overlay {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  padding: 7px 10px;
+  border-radius: 999px;
+  background: rgba(33, 26, 20, 0.12);
+  color: var(--text);
+  font-size: 0.64rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
   backdrop-filter: blur(2px);
 }
 
@@ -516,6 +680,60 @@ h1 {
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@media (max-width: 860px) {
+  #root {
+    padding: 12px;
+  }
+
+  .app {
+    padding: 24px 18px;
+  }
+
+  .header,
+  .footer {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .arena {
+    grid-template-columns: 1fr;
+    justify-items: center;
+  }
+
+  .reserve-col {
+    width: 100%;
+  }
+
+  .reserve-label {
+    writing-mode: initial;
+  }
+
+  .reserve-stacks {
+    width: 100%;
+    flex-direction: row;
+    justify-content: center;
+    gap: 22px;
+  }
+
+  .board-stage {
+    max-width: 100%;
+  }
+
+  .room-actions,
+  .room-session,
+  .join-controls {
+    width: 100%;
+  }
+
+  .join-controls {
+    flex-wrap: wrap;
+  }
+
+  .room-input {
+    flex: 1 1 180px;
   }
 }
 
