@@ -1,5 +1,5 @@
-import { Canvas, useThree } from "@react-three/fiber";
-import { memo, useEffect, useMemo, useState } from "react";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 
 const BOARD_SIZE = 4;
@@ -9,12 +9,18 @@ const BOARD_RADIUS = 0.32;
 const TILE_GAP = 0.12;
 const TILE_PADDING = 0.36;
 const TILE_DEPTH = 0.07;
+const CAMERA_INTRO_DURATION_MS = 2400;
+const CAMERA_ISOMETRIC_POSITION = new THREE.Vector3(7.8, 8.2, 7.8);
+const CAMERA_LOOK_AT = new THREE.Vector3(0, 0.3, 0);
+const CAMERA_START_RADIUS = 14.2;
+const CAMERA_START_PHI = THREE.MathUtils.degToRad(12);
+const CAMERA_START_THETA = THREE.MathUtils.degToRad(-120);
 
 const CUP_SPECS = {
-  1: { radius: 0.14, height: 0.3 },
-  2: { radius: 0.24, height: 0.35 },
-  3: { radius: 0.34, height: 0.4 },
-  4: { radius: 0.46, height: 0.46 },
+  1: { radius: 0.14, height: 0.46 },
+  2: { radius: 0.24, height: 0.56 },
+  3: { radius: 0.34, height: 0.66 },
+  4: { radius: 0.46, height: 0.76 },
 };
 
 function Board3D({
@@ -24,6 +30,7 @@ function Board3D({
   selected,
   dragState,
   dragPreview,
+  introSequence,
   onSquareClick,
   onSquareHover,
   onSquareHoverEnd,
@@ -37,7 +44,7 @@ function Board3D({
       gl={{ antialias: true }}
       dpr={[1, 1.8]}
     >
-      <SceneCamera />
+      <SceneCamera introSequence={introSequence} />
       <color attach="background" args={["#fcf8f1"]} />
       <ambientLight intensity={0.86} />
       <hemisphereLight args={["#fff9ef", "#b8a791", 0.74]} />
@@ -76,16 +83,99 @@ function Board3D({
   );
 }
 
-function SceneCamera() {
+function SceneCamera({ introSequence }) {
   const { camera } = useThree();
+  const animateIntroRef = useRef(false);
+  const introStartTimeRef = useRef(-1);
+  const endSphericalRef = useRef({ radius: 0, phi: 0, theta: 0 });
+  const workingSphericalRef = useRef(new THREE.Spherical());
 
   useEffect(() => {
-    camera.position.set(7.8, 8.2, 7.8);
-    camera.lookAt(0, 0.3, 0);
+    const prefersReducedMotion =
+      typeof window !== "undefined" &&
+      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+
+    const cameraOffset = CAMERA_ISOMETRIC_POSITION.clone().sub(CAMERA_LOOK_AT);
+    workingSphericalRef.current.setFromVector3(cameraOffset);
+    endSphericalRef.current = {
+      radius: workingSphericalRef.current.radius,
+      phi: workingSphericalRef.current.phi,
+      theta: workingSphericalRef.current.theta,
+    };
+
+    if (prefersReducedMotion) {
+      animateIntroRef.current = false;
+      introStartTimeRef.current = -1;
+      camera.position.copy(CAMERA_ISOMETRIC_POSITION);
+      camera.lookAt(CAMERA_LOOK_AT);
+      camera.updateProjectionMatrix();
+      return;
+    }
+
+    animateIntroRef.current = true;
+    introStartTimeRef.current = -1;
+    workingSphericalRef.current.set(
+      CAMERA_START_RADIUS,
+      CAMERA_START_PHI,
+      CAMERA_START_THETA
+    );
+    camera.position
+      .setFromSpherical(workingSphericalRef.current)
+      .add(CAMERA_LOOK_AT);
+    camera.lookAt(CAMERA_LOOK_AT);
     camera.updateProjectionMatrix();
-  }, [camera]);
+  }, [camera, introSequence]);
+
+  useFrame((state) => {
+    if (!animateIntroRef.current) {
+      return;
+    }
+
+    if (introStartTimeRef.current < 0) {
+      introStartTimeRef.current = state.clock.elapsedTime;
+    }
+
+    const elapsedMs = (state.clock.elapsedTime - introStartTimeRef.current) * 1000;
+    const progress = Math.min(elapsedMs / CAMERA_INTRO_DURATION_MS, 1);
+    const eased = easeInOutQuint(progress);
+
+    const radius = THREE.MathUtils.lerp(
+      CAMERA_START_RADIUS,
+      endSphericalRef.current.radius,
+      eased
+    );
+    const phi = THREE.MathUtils.lerp(
+      CAMERA_START_PHI,
+      endSphericalRef.current.phi,
+      eased
+    );
+    const theta = THREE.MathUtils.lerp(
+      CAMERA_START_THETA,
+      endSphericalRef.current.theta,
+      eased
+    );
+    workingSphericalRef.current.set(radius, phi, theta);
+    camera.position
+      .setFromSpherical(workingSphericalRef.current)
+      .add(CAMERA_LOOK_AT);
+    camera.lookAt(CAMERA_LOOK_AT);
+
+    if (progress >= 1) {
+      animateIntroRef.current = false;
+      camera.position.copy(CAMERA_ISOMETRIC_POSITION);
+      camera.lookAt(CAMERA_LOOK_AT);
+      camera.updateProjectionMatrix();
+    }
+  });
 
   return null;
+}
+
+function easeInOutQuint(value) {
+  if (value < 0.5) {
+    return 16 * value ** 5;
+  }
+  return 1 - ((-2 * value + 2) ** 5) / 2;
 }
 
 function BoardGroup({
@@ -268,10 +358,10 @@ function BoardGroup({
                 emissive={
                   isHovered
                     ? hoveredLegal
-                      ? "#87a06f"
+                      ? "#709c8d"
                       : "#a06a5b"
                     : isTarget
-                      ? "#6f8960"
+                      ? "#638b7d"
                       : isSelected
                         ? "#8b7159"
                         : "#000000"
@@ -298,7 +388,7 @@ function BoardGroup({
                   raycast={() => null}
                 >
                   <meshBasicMaterial
-                    color={hoveredLegal ? "#bbd3a4" : "#88a274"}
+                    color={hoveredLegal ? "#a4ccbe" : "#769f92"}
                     transparent
                     opacity={hoveredLegal ? 0.74 : 0.44}
                     depthWrite={false}
@@ -311,7 +401,7 @@ function BoardGroup({
                   raycast={() => null}
                 >
                   <meshBasicMaterial
-                    color={hoveredLegal ? "#e3efd3" : "#b6cb9f"}
+                    color={hoveredLegal ? "#d6eee6" : "#9abfb3"}
                     transparent
                     opacity={hoveredLegal ? 0.94 : 0.6}
                     depthWrite={false}
@@ -375,7 +465,7 @@ function Cup3D({ x, z, size, color, selected, pickable, onPointerDown }) {
           color={cupColor}
           roughness={0.42}
           metalness={0.02}
-          emissive={selected ? "#89694d" : pickupGlow ? "#758f5f" : "#000000"}
+          emissive={selected ? "#89694d" : pickupGlow ? "#638f82" : "#000000"}
           emissiveIntensity={selected ? 0.18 : pickupGlow ? 0.22 : 0}
         />
       </mesh>
@@ -387,7 +477,7 @@ function Cup3D({ x, z, size, color, selected, pickable, onPointerDown }) {
         >
           <ringGeometry args={[spec.radius + 0.045, spec.radius + 0.075, 48]} />
           <meshBasicMaterial
-            color="#a6c38c"
+            color="#91baad"
             transparent
             opacity={0.66}
             depthWrite={false}
@@ -426,7 +516,7 @@ function DropProjectionCup({ x, z, size, color }) {
           metalness={0.02}
           transparent
           opacity={0.84}
-          emissive="#b2cb94"
+          emissive="#95beaf"
           emissiveIntensity={0.34}
         />
       </mesh>

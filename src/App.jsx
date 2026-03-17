@@ -11,6 +11,8 @@ const LINES_BY_SQUARE = buildLinesBySquare();
 function App() {
   const [game, setGame] = useState(() => createInitialGame());
   const [dragState, setDragState] = useState(() => createInactiveDragState());
+  const [cameraIntroSequence, setCameraIntroSequence] = useState(0);
+  const [isRulesOpen, setIsRulesOpen] = useState(false);
 
   const legalTargetSet = useMemo(() => {
     if (!game.selected) {
@@ -130,6 +132,15 @@ function App() {
   const handleRestart = () => {
     setGame(createInitialGame());
     setDragState(createInactiveDragState());
+    setCameraIntroSequence((current) => current + 1);
+  };
+
+  const openRules = () => {
+    setIsRulesOpen(true);
+  };
+
+  const closeRules = () => {
+    setIsRulesOpen(false);
   };
 
   const handleSquareClick = (squareIndex) => {
@@ -305,13 +316,39 @@ function App() {
     return () => window.removeEventListener("pointermove", handlePointerMove);
   }, [dragState.active, dragState.origin]);
 
+  useEffect(() => {
+    if (!isRulesOpen) {
+      return undefined;
+    }
+
+    const previousOverflow = document.body.style.overflow;
+    const handleEscape = (event) => {
+      if (event.key === "Escape") {
+        setIsRulesOpen(false);
+      }
+    };
+
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", handleEscape);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", handleEscape);
+    };
+  }, [isRulesOpen]);
+
   return (
     <main className={`app ${game.gameOver ? "game-ended" : ""}`}>
       <header className="header fade-in-1">
         <h1>Goblett</h1>
-        <div className="header-status">
-          <span className={`turn-dot ${game.turn}`} />
-          <span className="turn-label">{turnText}</span>
+        <div className="header-controls">
+          <button type="button" className="rules-btn" onClick={openRules}>
+            Rules
+          </button>
+          <div className="header-status">
+            <span className={`turn-dot ${game.turn}`} />
+            <span className="turn-label">{turnText}</span>
+          </div>
         </div>
       </header>
 
@@ -345,6 +382,7 @@ function App() {
               selected={game.selected}
               dragState={dragState}
               dragPreview={dragPreview}
+              introSequence={cameraIntroSequence}
               onSquareClick={handleSquareClick}
               onSquareHover={handleSquareHover}
               onSquareHoverEnd={clearSquareHover}
@@ -396,7 +434,67 @@ function App() {
           {game.gameOver ? "Play again" : "Restart"}
         </button>
       </footer>
+
+      {isRulesOpen ? <RulesModal onClose={closeRules} /> : null}
     </main>
+  );
+}
+
+function RulesModal({ onClose }) {
+  const rulesId = "game-rules-heading";
+
+  return (
+    <div className="rules-modal-backdrop" onClick={onClose}>
+      <section
+        className="rules-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={rulesId}
+        onClick={(event) => event.stopPropagation()}
+      >
+        <header className="rules-modal-header">
+          <p className="rules-kicker">How to play</p>
+          <h2 id={rulesId}>Goblett rules</h2>
+        </header>
+
+        <div className="rules-body">
+          <p>
+            Build a visible line of 4 cups in any row, column, or diagonal to win.
+          </p>
+
+          <p>On your turn, move exactly one cup:</p>
+          <ul>
+            <li>From one of your reserve stacks to the board.</li>
+            <li>Or move the top cup from one board stack to a different square.</li>
+          </ul>
+
+          <p>Covering rules:</p>
+          <ul>
+            <li>You may place only on an empty square or on a smaller cup.</li>
+            <li>
+              Reserve cups can only cover an opponent cup when it blocks an immediate
+              4-in-a-row threat.
+            </li>
+          </ul>
+
+          <p>End conditions:</p>
+          <ul>
+            <li>If you end your turn with 4 in a row, you win.</li>
+            <li>
+              If your move reveals an opponent 4 in a row, the opponent wins
+              immediately.
+            </li>
+            <li>Threefold repetition is a draw.</li>
+          </ul>
+        </div>
+
+        <div className="rules-modal-footer">
+          <button type="button" className="restart-btn prominent" onClick={onClose}>
+            Back to game
+          </button>
+        </div>
+      </section>
+    </div>
   );
 }
 
