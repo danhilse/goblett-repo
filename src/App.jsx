@@ -1,18 +1,101 @@
 import { useEffect, useMemo, useState } from "react";
 import Board3D from "./components/Board3D";
-
-const BOARD_SIZE = 4;
-const TOTAL_SQUARES = BOARD_SIZE * BOARD_SIZE;
-const STACK_COUNT = 3;
-const STARTING_SIZES = [4, 3, 2, 1];
-const WINNING_LINES = buildWinningLines();
-const LINES_BY_SQUARE = buildLinesBySquare();
+import {
+  TOTAL_SQUARES,
+  capitalize,
+  createInitialGame,
+  executeMove,
+  getTopCup,
+  legalTargetsForSelection,
+  resolveDraggedSelection,
+  selectionsMatch,
+  selectBoardCup,
+  selectReserveStack,
+} from "./game";
+import usePartyRoom from "./usePartyRoom";
 
 function App() {
   const [game, setGame] = useState(() => createInitialGame());
   const [dragState, setDragState] = useState(() => createInactiveDragState());
   const [cameraIntroSequence, setCameraIntroSequence] = useState(0);
   const [isRulesOpen, setIsRulesOpen] = useState(false);
+  const [matchMode, setMatchMode] = useState("local");
+  const [joinCode, setJoinCode] = useState("");
+  const [shareCopied, setShareCopied] = useState(false);
+  const {
+    onlineAvailable,
+    roomState,
+    yourSeat,
+    normalizeRoomCode,
+    createRoom,
+    joinRoom,
+    leaveRoom,
+    sendMove,
+    requestRestart,
+  } = usePartyRoom();
+
+  const isOnlineLobby = matchMode === "online";
+  const isInOnlineRoom = isOnlineLobby && Boolean(roomState.roomCode);
+  const interactionLocked =
+    isInOnlineRoom &&
+    (roomState.connectionStatus !== "connected" ||
+      yourSeat === "spectator" ||
+      yourSeat !== game.turn);
+
+  useEffect(() => {
+    if (!isInOnlineRoom || !roomState.game) {
+      return;
+    }
+
+    setGame(roomState.game);
+    setDragState(createInactiveDragState());
+  }, [isInOnlineRoom, roomState.game]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const url = new URL(window.location.href);
+
+    if (isInOnlineRoom) {
+      url.searchParams.set("room", roomState.roomCode);
+    } else {
+      url.searchParams.delete("room");
+    }
+
+    window.history.replaceState({}, "", url);
+  }, [isInOnlineRoom, roomState.roomCode]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const roomParam = normalizeRoomCode(
+      new URLSearchParams(window.location.search).get("room") || ""
+    );
+
+    if (!roomParam) {
+      return;
+    }
+
+    setMatchMode("online");
+    setJoinCode(roomParam);
+    joinRoom(roomParam);
+  }, []);
+
+  useEffect(() => {
+    if (!shareCopied) {
+      return undefined;
+    }
+
+    const timeout = window.setTimeout(() => {
+      setShareCopied(false);
+    }, 1800);
+
+    return () => window.clearTimeout(timeout);
+  }, [shareCopied]);
 
   const legalTargetSet = useMemo(() => {
     if (!game.selected) {
@@ -20,8 +103,9 @@ function App() {
     }
     return new Set(legalTargetsForSelection(game, game.selected));
   }, [game]);
+
   const movableBoardSquareSet = useMemo(() => {
-    if (game.gameOver) {
+    if (game.gameOver || interactionLocked) {
       return new Set();
     }
 
@@ -51,14 +135,15 @@ function App() {
       }
     }
     return movable;
-  }, [game]);
+  }, [game, interactionLocked]);
+
   const movableReserveByColor = useMemo(() => {
     const movable = {
       white: new Set(),
       black: new Set(),
     };
 
-    if (game.gameOver || game.selected?.type === "board") {
+    if (game.gameOver || interactionLocked || game.selected?.type === "board") {
       return movable;
     }
 
@@ -85,7 +170,8 @@ function App() {
     });
 
     return movable;
-  }, [game]);
+  }, [game, interactionLocked]);
+
   const dragPreview = useMemo(() => {
     if (!dragState.active) {
       return null;
@@ -111,6 +197,7 @@ function App() {
     }
     return capitalize(game.turn);
   }, [game.gameOver, game.turn]);
+
   const gameOverHeading = useMemo(() => {
     if (!game.gameOver) {
       return "";
@@ -121,54 +208,184 @@ function App() {
     return `Game over: ${capitalize(game.gameOver.winner)} wins`;
   }, [game.gameOver]);
 
-  const reserveCounts = useMemo(
-    () => ({
-      white: game.reserves.white.reduce((sum, stack) => sum + stack.length, 0),
-      black: game.reserves.black.reduce((sum, stack) => sum + stack.length, 0),
-    }),
-    [game.reserves]
-  );
+  const roomStatusText = useMemo(() => {
+    if (!isOnlineLobby) {
+      return "Local pass-and-play.";
+    }
+
+    if (!onlineAvailable) {
+      return "Online rooms are disabled until VITE_PARTYKIT_HOST is configured.";
+    }
+
+    if (!isInOnlineRoom) {
+      return "Create a room or join a room code.";
+    }
+
+    if (roomState.connectionStatus === "connecting") {
+      return `Connecting to room ${roomState.roomCode}...`;
+    }
+
+    if (roomState.connectionStatus === "disconnected") {
+      return `Disconnected from room ${roomState.roomCode}.`;
+    }
+
+    if (yourSeat === "spectator") {
+      return `Room ${roomState.roomCode} is full. You are watching.`;
+    }
+
+    if (game.gameOver) {
+      return `Room ${roomState.roomCode}. ${turnText}.`;
+    }
+
+    if (yourSeat === game.turn) {
+      return `Room ${roomState.roomCode}. Your turn as ${capitalize(yourSeat)}.`;
+    }
+
+    return `Room ${roomState.roomCode}. Waiting for ${capitalize(game.turn)}.`;
+  }, [
+    game.gameOver,
+    game.turn,
+    isInOnlineRoom,
+    isOnlineLobby,
+    onlineAvailable,
+    roomState.connectionStatus,
+    roomState.roomCode,
+    turnText,
+    yourSeat,
+  ]);
+
+  const footerStatus = roomState.lastError || roomStatusText || game.status;
+  const restartDisabled =
+    isInOnlineRoom &&
+    (roomState.connectionStatus !== "connected" || yourSeat === "spectator");
+
+  const submitSelectionTarget = (currentGame, selection, targetIndex) => {
+    const legalTargets = legalTargetsForSelection(currentGame, selection);
+    if (!legalTargets.includes(targetIndex)) {
+      return {
+        ...currentGame,
+        selected: selection,
+        status: "Illegal target for the selected cup.",
+      };
+    }
+
+    if (isInOnlineRoom) {
+      const didSend = sendMove(selectionToOrigin(selection), targetIndex);
+      return {
+        ...currentGame,
+        selected: didSend ? null : selection,
+        status: didSend
+          ? "Move sent. Waiting for room sync."
+          : "Room connection is offline.",
+      };
+    }
+
+    return executeMove(
+      {
+        ...currentGame,
+        selected: selection,
+      },
+      targetIndex
+    );
+  };
 
   const handleRestart = () => {
+    setDragState(createInactiveDragState());
+
+    if (isInOnlineRoom) {
+      if (requestRestart()) {
+        setGame((current) => ({
+          ...current,
+          selected: null,
+          status: "Restart requested. Waiting for room sync.",
+        }));
+      }
+      return;
+    }
+
+    setGame(createInitialGame());
+    setCameraIntroSequence((current) => current + 1);
+  };
+
+  const handleSwitchToLocal = () => {
+    if (isInOnlineRoom) {
+      leaveRoom();
+    }
+
+    setMatchMode("local");
+    setJoinCode("");
     setGame(createInitialGame());
     setDragState(createInactiveDragState());
     setCameraIntroSequence((current) => current + 1);
   };
 
-  const openRules = () => {
-    setIsRulesOpen(true);
+  const handleOpenOnline = () => {
+    setMatchMode("online");
   };
 
-  const closeRules = () => {
-    setIsRulesOpen(false);
+  const handleCreateRoom = () => {
+    setMatchMode("online");
+    createRoom();
+    setDragState(createInactiveDragState());
+  };
+
+  const handleJoinRoom = () => {
+    setMatchMode("online");
+    if (joinRoom(joinCode)) {
+      setDragState(createInactiveDragState());
+    }
+  };
+
+  const handleLeaveRoom = () => {
+    leaveRoom();
+    setGame(createInitialGame());
+    setDragState(createInactiveDragState());
+    setCameraIntroSequence((current) => current + 1);
+  };
+
+  const handleCopyInvite = async () => {
+    if (typeof window === "undefined" || !roomState.roomCode) {
+      return;
+    }
+
+    const inviteUrl = new URL(window.location.href);
+    inviteUrl.searchParams.set("room", roomState.roomCode);
+    inviteUrl.hash = "";
+
+    try {
+      await navigator.clipboard.writeText(inviteUrl.toString());
+      setShareCopied(true);
+    } catch {
+      setShareCopied(false);
+    }
   };
 
   const handleSquareClick = (squareIndex) => {
+    if (interactionLocked) {
+      return;
+    }
+
     setDragState(createInactiveDragState());
-    setGame((current) => {
-      if (current.gameOver) {
-        return current;
-      }
 
-      if (!current.selected) {
-        return selectBoardCup(current, squareIndex);
-      }
+    if (game.gameOver) {
+      return;
+    }
 
-      const legalTargets = legalTargetsForSelection(current, current.selected);
-      if (!legalTargets.includes(squareIndex)) {
-        return {
-          ...current,
-          status: "Illegal target for the selected cup.",
-        };
-      }
+    if (!game.selected) {
+      setGame(selectBoardCup(game, squareIndex));
+      return;
+    }
 
-      return executeMove(current, squareIndex);
-    });
+    setGame(submitSelectionTarget(game, game.selected, squareIndex));
   };
 
   const handleReserveClick = (color, reserveIndex) => {
+    if (interactionLocked) {
+      return;
+    }
+
     setDragState(createInactiveDragState());
-    setGame((current) => selectReserveStack(current, color, reserveIndex));
+    setGame(selectReserveStack(game, color, reserveIndex));
   };
 
   const handleSquareHover = (squareIndex) => {
@@ -196,7 +413,7 @@ function App() {
   };
 
   const handleCupPointerDown = (squareIndex, pointer) => {
-    if (game.gameOver) {
+    if (game.gameOver || interactionLocked) {
       return;
     }
 
@@ -206,8 +423,7 @@ function App() {
     }
 
     const canUseCurrentSelection =
-      game.selected?.type === "board" &&
-      game.selected.squareIndex === squareIndex;
+      game.selected?.type === "board" && game.selected.squareIndex === squareIndex;
     if (game.selected && !canUseCurrentSelection) {
       return;
     }
@@ -220,7 +436,7 @@ function App() {
     };
     const legalTargets = legalTargetsForSelection(game, selection);
     if (!canUseCurrentSelection) {
-      setGame((current) => selectBoardCup(current, squareIndex));
+      setGame(selectBoardCup(game, squareIndex));
     }
 
     if (!legalTargets.length) {
@@ -241,6 +457,7 @@ function App() {
   const handleReservePointerDown = (color, reserveIndex, pointer) => {
     if (
       game.gameOver ||
+      interactionLocked ||
       color !== game.turn ||
       game.selected?.type === "board"
     ) {
@@ -259,7 +476,7 @@ function App() {
       size: stack[0],
     };
     const legalTargets = legalTargetsForSelection(game, selection);
-    setGame((current) => selectReserveStack(current, color, reserveIndex));
+    setGame(selectReserveStack(game, color, reserveIndex));
 
     if (!legalTargets.length) {
       return;
@@ -283,13 +500,13 @@ function App() {
     }
 
     const handlePointerUp = () => {
-      setGame((current) => completeDragMove(current, dragState));
+      setGame(completeDragMove(game, dragState, submitSelectionTarget));
       setDragState(createInactiveDragState());
     };
 
     window.addEventListener("pointerup", handlePointerUp);
     return () => window.removeEventListener("pointerup", handlePointerUp);
-  }, [dragState]);
+  }, [dragState, game]);
 
   useEffect(() => {
     if (!dragState.active || dragState.origin?.type !== "reserve") {
@@ -340,9 +557,12 @@ function App() {
   return (
     <main className={`app ${game.gameOver ? "game-ended" : ""}`}>
       <header className="header fade-in-1">
-        <h1>Goblett</h1>
+        <div>
+          <h1>Goblett</h1>
+          <p className="subhead">A minimalist Gobblet room with optional online play.</p>
+        </div>
         <div className="header-controls">
-          <button type="button" className="rules-btn" onClick={openRules}>
+          <button type="button" className="rules-btn" onClick={() => setIsRulesOpen(true)}>
             Rules
           </button>
           <div className="header-status">
@@ -352,11 +572,99 @@ function App() {
         </div>
       </header>
 
+      <section className="match-panel fade-in-2" aria-label="Match controls">
+        <div className="mode-toggle" role="tablist" aria-label="Play mode">
+          <button
+            type="button"
+            className={`mode-btn ${matchMode === "local" ? "active" : ""}`}
+            onClick={handleSwitchToLocal}
+          >
+            Local
+          </button>
+          <button
+            type="button"
+            className={`mode-btn ${matchMode === "online" ? "active" : ""}`}
+            onClick={handleOpenOnline}
+          >
+            Online
+          </button>
+        </div>
+
+        {matchMode === "online" ? (
+          <div className="room-panel">
+            {!isInOnlineRoom ? (
+              <div className="room-actions">
+                <button
+                  type="button"
+                  className="room-btn primary"
+                  onClick={handleCreateRoom}
+                  disabled={!onlineAvailable}
+                >
+                  Create room
+                </button>
+                <div className="join-controls">
+                  <input
+                    type="text"
+                    className="room-input"
+                    value={joinCode}
+                    onChange={(event) => setJoinCode(normalizeRoomCode(event.target.value))}
+                    placeholder="Room code"
+                    inputMode="text"
+                    autoCapitalize="characters"
+                    spellCheck="false"
+                    maxLength={6}
+                  />
+                  <button
+                    type="button"
+                    className="room-btn"
+                    onClick={handleJoinRoom}
+                    disabled={!onlineAvailable || joinCode.length < 4}
+                  >
+                    Join
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="room-session">
+                <div>
+                  <p className="room-kicker">Room</p>
+                  <p className="room-code">{roomState.roomCode}</p>
+                </div>
+                <div>
+                  <p className="room-kicker">Seat</p>
+                  <p className="room-meta">{capitalize(yourSeat)}</p>
+                </div>
+                <div>
+                  <p className="room-kicker">Connection</p>
+                  <p className="room-meta">{capitalize(roomState.connectionStatus)}</p>
+                </div>
+                <div className="room-session-actions">
+                  <button type="button" className="room-btn" onClick={handleCopyInvite}>
+                    {shareCopied ? "Copied" : "Copy invite"}
+                  </button>
+                  <button type="button" className="room-btn" onClick={handleLeaveRoom}>
+                    Leave room
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <p className="match-note">{roomStatusText}</p>
+          </div>
+        ) : (
+          <p className="match-note">Pass the device locally, or switch to Online for room play.</p>
+        )}
+      </section>
+
       {game.gameOver ? (
         <section className="game-over-banner fade-in-2" role="alert" aria-live="assertive">
           <p className="game-over-kicker">Game over</p>
           <p className="game-over-title">{turnText}</p>
-          <p className="game-over-note">Press Play again to start a new match.</p>
+          <p className="game-over-note">
+            {isInOnlineRoom
+              ? "Restart the room to begin another match."
+              : "Press Play again to start a new match."}
+          </p>
         </section>
       ) : null}
 
@@ -365,13 +673,16 @@ function App() {
           color="white"
           game={game}
           pickableSet={movableReserveByColor.white}
+          interactionEnabled={!interactionLocked}
           onSelect={handleReserveClick}
           onPointerDown={handleReservePointerDown}
         />
 
         <section className={`board-stage ${game.gameOver ? "game-over" : ""}`}>
           <div
-            className={`board-canvas ${dragState.active ? "dragging" : ""}`}
+            className={`board-canvas ${dragState.active ? "dragging" : ""} ${
+              interactionLocked ? "locked" : ""
+            }`}
             role="grid"
             aria-label="Goblett board"
           >
@@ -395,12 +706,18 @@ function App() {
               <strong>{turnText}</strong>
             </div>
           ) : null}
+          {interactionLocked && isInOnlineRoom ? (
+            <div className="board-room-overlay" aria-hidden="true">
+              <span>{yourSeat === "spectator" ? "Spectating" : "Waiting"}</span>
+            </div>
+          ) : null}
         </section>
 
         <ReserveColumn
           color="black"
           game={game}
           pickableSet={movableReserveByColor.black}
+          interactionEnabled={!interactionLocked}
           onSelect={handleReserveClick}
           onPointerDown={handleReservePointerDown}
         />
@@ -410,8 +727,7 @@ function App() {
       dragState.origin?.type === "reserve" &&
       dragPreview &&
       dragState.pointer &&
-      (dragState.hoverSquare === null ||
-        !legalTargetSet.has(dragState.hoverSquare)) ? (
+      (dragState.hoverSquare === null || !legalTargetSet.has(dragState.hoverSquare)) ? (
         <div
           className="drag-cursor"
           style={{
@@ -425,17 +741,18 @@ function App() {
       ) : null}
 
       <footer className="footer fade-in-3">
-        <p className="status-line">{game.status}</p>
+        <p className="status-line">{footerStatus}</p>
         <button
           type="button"
           className={`restart-btn ${game.gameOver ? "prominent" : ""}`}
           onClick={handleRestart}
+          disabled={restartDisabled}
         >
-          {game.gameOver ? "Play again" : "Restart"}
+          {isInOnlineRoom ? "Restart room" : game.gameOver ? "Play again" : "Restart"}
         </button>
       </footer>
 
-      {isRulesOpen ? <RulesModal onClose={closeRules} /> : null}
+      {isRulesOpen ? <RulesModal onClose={() => setIsRulesOpen(false)} /> : null}
     </main>
   );
 }
@@ -458,9 +775,7 @@ function RulesModal({ onClose }) {
         </header>
 
         <div className="rules-body">
-          <p>
-            Build a visible line of 4 cups in any row, column, or diagonal to win.
-          </p>
+          <p>Build a visible line of 4 cups in any row, column, or diagonal to win.</p>
 
           <p>On your turn, move exactly one cup:</p>
           <ul>
@@ -481,8 +796,7 @@ function RulesModal({ onClose }) {
           <ul>
             <li>If you end your turn with 4 in a row, you win.</li>
             <li>
-              If your move reveals an opponent 4 in a row, the opponent wins
-              immediately.
+              If your move reveals an opponent 4 in a row, the opponent wins immediately.
             </li>
             <li>Threefold repetition is a draw.</li>
           </ul>
@@ -498,7 +812,14 @@ function RulesModal({ onClose }) {
   );
 }
 
-function ReserveColumn({ color, game, pickableSet, onSelect, onPointerDown }) {
+function ReserveColumn({
+  color,
+  game,
+  pickableSet,
+  interactionEnabled,
+  onSelect,
+  onPointerDown,
+}) {
   return (
     <aside className={`reserve-col ${color}`} aria-label={`${color} reserves`}>
       <span className="reserve-label">{color}</span>
@@ -510,14 +831,19 @@ function ReserveColumn({ color, game, pickableSet, onSelect, onPointerDown }) {
             game.selected.reserveIndex === index &&
             game.selected.color === color;
           const isDisabled =
-            game.turn !== color || stack.length === 0 || Boolean(game.gameOver);
+            !interactionEnabled ||
+            game.turn !== color ||
+            stack.length === 0 ||
+            Boolean(game.gameOver);
           const isPickable = !isDisabled && pickableSet.has(index);
 
           return (
             <button
               key={`${color}-${index}`}
               type="button"
-              className={`reserve-piece ${isActive ? "active" : ""} ${isPickable ? "pickable" : ""} ${!nextSize ? "empty" : ""}`}
+              className={`reserve-piece ${isActive ? "active" : ""} ${
+                isPickable ? "pickable" : ""
+              } ${!nextSize ? "empty" : ""}`}
               disabled={isDisabled}
               onPointerDown={(event) => {
                 if (isDisabled) {
@@ -546,168 +872,7 @@ function ReserveColumn({ color, game, pickableSet, onSelect, onPointerDown }) {
   );
 }
 
-function createInitialGame() {
-  const initial = {
-    board: Array.from({ length: TOTAL_SQUARES }, () => []),
-    reserves: {
-      white: Array.from({ length: STACK_COUNT }, () => [...STARTING_SIZES]),
-      black: Array.from({ length: STACK_COUNT }, () => [...STARTING_SIZES]),
-    },
-    turn: "white",
-    selected: null,
-    gameOver: null,
-    status: "Select or drag a reserve stack, or drag a cup you control.",
-    repetitionCount: {},
-  };
-
-  const key = serializePosition(initial);
-  initial.repetitionCount[key] = 1;
-  return initial;
-}
-
-function selectBoardCup(game, squareIndex) {
-  const top = getTopCup(game.board, squareIndex);
-  if (!top || top.color !== game.turn) {
-    return game;
-  }
-
-  if (game.selected?.type === "board" || game.selected?.type === "reserve") {
-    return game;
-  }
-
-  const selection = {
-    type: "board",
-    squareIndex,
-    size: top.size,
-    color: top.color,
-  };
-  const legalTargets = legalTargetsForSelection(game, selection);
-
-  if (legalTargets.length === 0) {
-    return {
-      ...game,
-      status: "That cup has no legal destination.",
-    };
-  }
-
-  return {
-    ...game,
-    selected: selection,
-    status: "Cup selected. Drag or tap a destination square.",
-  };
-}
-
-function selectReserveStack(game, color, reserveIndex) {
-  if (game.gameOver || color !== game.turn) {
-    return game;
-  }
-
-  if (game.selected?.type === "board") {
-    return {
-      ...game,
-      status: "A board cup is already touched and must be moved.",
-    };
-  }
-
-  const stack = game.reserves[color][reserveIndex];
-  if (!stack.length) {
-    return game;
-  }
-
-  const selection = {
-    type: "reserve",
-    color,
-    reserveIndex,
-    size: stack[0],
-  };
-  const legalTargets = legalTargetsForSelection(game, selection);
-
-  if (legalTargets.length === 0) {
-    return {
-      ...game,
-      status: "That reserve cup has no legal placement.",
-    };
-  }
-
-  return {
-    ...game,
-    selected: selection,
-    status: "Reserve cup selected. Drag or tap a destination square.",
-  };
-}
-
-function executeMove(game, targetIndex) {
-  const mover = game.turn;
-  const opponent = otherPlayer(mover);
-  const board = game.board.map((stack) => [...stack]);
-  const reserves = {
-    white: game.reserves.white.map((stack) => [...stack]),
-    black: game.reserves.black.map((stack) => [...stack]),
-  };
-
-  if (game.selected.type === "board") {
-    board[game.selected.squareIndex].pop();
-  } else {
-    reserves[mover][game.selected.reserveIndex].shift();
-  }
-
-  board[targetIndex].push({
-    color: mover,
-    size: game.selected.size,
-  });
-
-  const movedGame = {
-    ...game,
-    board,
-    reserves,
-    selected: null,
-  };
-
-  if (hasLine(movedGame, opponent)) {
-    return {
-      ...movedGame,
-      gameOver: { winner: opponent, type: "win" },
-      status: `${capitalize(opponent)} wins. ${capitalize(
-        mover
-      )} ended a turn while opponent had four in a row.`,
-    };
-  }
-
-  if (hasLine(movedGame, mover)) {
-    return {
-      ...movedGame,
-      gameOver: { winner: mover, type: "win" },
-      status: `${capitalize(mover)} wins with four in a row.`,
-    };
-  }
-
-  const nextTurnGame = {
-    ...movedGame,
-    turn: opponent,
-    status: `${capitalize(opponent)} to move.`,
-  };
-
-  const key = serializePosition(nextTurnGame);
-  const repetitionCount = { ...nextTurnGame.repetitionCount };
-  const nextCount = (repetitionCount[key] || 0) + 1;
-  repetitionCount[key] = nextCount;
-
-  if (nextCount >= 3) {
-    return {
-      ...nextTurnGame,
-      repetitionCount,
-      gameOver: { winner: null, type: "draw" },
-      status: "Draw by threefold repetition.",
-    };
-  }
-
-  return {
-    ...nextTurnGame,
-    repetitionCount,
-  };
-}
-
-function completeDragMove(game, dragState) {
+function completeDragMove(game, dragState, submitSelectionTarget) {
   if (!dragState.active || dragState.hoverSquare === null || game.gameOver) {
     return game;
   }
@@ -720,204 +885,22 @@ function completeDragMove(game, dragState) {
   const activeSelection = selectionsMatch(game.selected, draggedSelection)
     ? game.selected
     : draggedSelection;
-  const legalTargets = legalTargetsForSelection(game, activeSelection);
 
-  if (!legalTargets.includes(dragState.hoverSquare)) {
-    return {
-      ...game,
-      selected: activeSelection,
-    };
-  }
-
-  return executeMove(
-    {
-      ...game,
-      selected: activeSelection,
-    },
-    dragState.hoverSquare
-  );
+  return submitSelectionTarget(game, activeSelection, dragState.hoverSquare);
 }
 
-function legalTargetsForSelection(game, selection) {
-  const legal = [];
-
-  for (let target = 0; target < TOTAL_SQUARES; target += 1) {
-    const top = getTopCup(game.board, target);
-    const isEmpty = !top;
-    const targetIsOpponentTop = top && top.color === otherPlayer(game.turn);
-
-    if (selection.type === "board") {
-      if (target === selection.squareIndex) {
-        continue;
-      }
-      if (canCover(game.board, selection.size, target)) {
-        legal.push(target);
-      }
-      continue;
-    }
-
-    if (isEmpty) {
-      legal.push(target);
-      continue;
-    }
-
-    if (
-      targetIsOpponentTop &&
-      canCover(game.board, selection.size, target) &&
-      reserveCoverThreatExists(game, otherPlayer(game.turn), target)
-    ) {
-      legal.push(target);
-    }
-  }
-
-  return legal;
-}
-
-function reserveCoverThreatExists(game, opponentColor, targetIndex) {
-  for (const line of LINES_BY_SQUARE[targetIndex]) {
-    let count = 0;
-    for (const index of line) {
-      const top = getTopCup(game.board, index);
-      if (top && top.color === opponentColor) {
-        count += 1;
-      }
-    }
-    if (count === BOARD_SIZE - 1) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
-function hasLine(game, color) {
-  return WINNING_LINES.some((line) =>
-    line.every((index) => {
-      const top = getTopCup(game.board, index);
-      return top && top.color === color;
-    })
-  );
-}
-
-function serializePosition(game) {
-  const boardKey = game.board
-    .map((stack) => stack.map((cup) => `${cup.color[0]}${cup.size}`).join("."))
-    .join("|");
-  const reservesKey = ["white", "black"]
-    .map((color) => game.reserves[color].map((stack) => stack.join(",")).join("/"))
-    .join("|");
-
-  return `${game.turn}#${boardKey}#${reservesKey}`;
-}
-
-function canCover(board, movingSize, targetIndex) {
-  const top = getTopCup(board, targetIndex);
-  if (!top) {
-    return true;
-  }
-  return movingSize > top.size;
-}
-
-function getTopCup(board, squareIndex) {
-  const stack = board[squareIndex];
-  return stack.length ? stack[stack.length - 1] : null;
-}
-
-function resolveDraggedSelection(game, origin) {
-  if (!origin) {
-    return null;
-  }
-
-  if (origin.type === "board") {
-    const top = getTopCup(game.board, origin.squareIndex);
-    if (!top || top.color !== game.turn) {
-      return null;
-    }
-
+function selectionToOrigin(selection) {
+  if (selection.type === "board") {
     return {
       type: "board",
-      squareIndex: origin.squareIndex,
-      size: top.size,
-      color: top.color,
+      squareIndex: selection.squareIndex,
     };
-  }
-
-  const stack = game.reserves[origin.color][origin.reserveIndex];
-  if (
-    !stack.length ||
-    origin.color !== game.turn
-  ) {
-    return null;
   }
 
   return {
     type: "reserve",
-    color: origin.color,
-    reserveIndex: origin.reserveIndex,
-    size: stack[0],
+    reserveIndex: selection.reserveIndex,
   };
-}
-
-function selectionsMatch(left, right) {
-  if (!left || !right || left.type !== right.type) {
-    return false;
-  }
-
-  if (left.type === "board") {
-    return left.squareIndex === right.squareIndex;
-  }
-
-  return (
-    left.color === right.color && left.reserveIndex === right.reserveIndex
-  );
-}
-
-function otherPlayer(color) {
-  return color === "white" ? "black" : "white";
-}
-
-function buildLinesBySquare() {
-  const mapping = Array.from({ length: TOTAL_SQUARES }, () => []);
-  for (const line of WINNING_LINES) {
-    for (const index of line) {
-      mapping[index].push(line);
-    }
-  }
-  return mapping;
-}
-
-function buildWinningLines() {
-  const generated = [];
-
-  for (let row = 0; row < BOARD_SIZE; row += 1) {
-    const rowLine = [];
-    for (let col = 0; col < BOARD_SIZE; col += 1) {
-      rowLine.push(row * BOARD_SIZE + col);
-    }
-    generated.push(rowLine);
-  }
-
-  for (let col = 0; col < BOARD_SIZE; col += 1) {
-    const colLine = [];
-    for (let row = 0; row < BOARD_SIZE; row += 1) {
-      colLine.push(row * BOARD_SIZE + col);
-    }
-    generated.push(colLine);
-  }
-
-  const leftDiag = [];
-  const rightDiag = [];
-  for (let i = 0; i < BOARD_SIZE; i += 1) {
-    leftDiag.push(i * (BOARD_SIZE + 1));
-    rightDiag.push((i + 1) * (BOARD_SIZE - 1));
-  }
-
-  generated.push(leftDiag, rightDiag);
-  return generated;
-}
-
-function capitalize(text) {
-  return text[0].toUpperCase() + text.slice(1);
 }
 
 function createInactiveDragState() {
