@@ -1,5 +1,8 @@
 {
   "name": "goblett",
   "main": "party/server.js",
+  "parties": {
+    "goblett": "party/server.js"
+  },
   "compatibilityDate": "2026-03-17"
 }

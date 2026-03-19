@@ -18,7 +18,15 @@ function createRoomState(roomCode) {
   };
 }
 
+function createPlayerId() {
+  return crypto.randomUUID();
+}
+
 function seatForPlayer(seats, playerId) {
+  if (!playerId) {
+    return null;
+  }
+
   if (seats.white === playerId) {
     return "white";
   }
@@ -28,23 +36,50 @@ function seatForPlayer(seats, playerId) {
   return null;
 }
 
-function assignSeat(state, playerId) {
-  const existingSeat = seatForPlayer(state.seats, playerId);
-  if (existingSeat) {
-    return existingSeat;
+function assignSeat(state, playerId = null) {
+  if (playerId) {
+    const existingSeat = seatForPlayer(state.seats, playerId);
+    if (existingSeat) {
+      return { seat: existingSeat, playerId };
+    }
   }
 
   if (!state.seats.white) {
-    state.seats.white = playerId;
-    return "white";
+    const nextPlayerId = createPlayerId();
+    state.seats.white = nextPlayerId;
+    return { seat: "white", playerId: nextPlayerId };
   }
 
   if (!state.seats.black) {
-    state.seats.black = playerId;
-    return "black";
+    const nextPlayerId = createPlayerId();
+    state.seats.black = nextPlayerId;
+    return { seat: "black", playerId: nextPlayerId };
   }
 
-  return "spectator";
+  return { seat: "spectator", playerId: null };
+}
+
+function releaseSeat(state, playerId) {
+  let didReleaseSeat = false;
+
+  if (state.seats.white === playerId) {
+    state.seats.white = null;
+    didReleaseSeat = true;
+  }
+
+  if (state.seats.black === playerId) {
+    state.seats.black = null;
+    didReleaseSeat = true;
+  }
+
+  return didReleaseSeat;
+}
+
+function sanitizeSeatsForSync(seats) {
+  return {
+    white: Boolean(seats.white),
+    black: Boolean(seats.black),
+  };
 }
 
 export default class GoblettServer {
@@ -56,7 +91,8 @@ export default class GoblettServer {
 
   async onConnect(connection) {
     const state = await this.loadState();
-    connection.send(JSON.stringify(this.createSnapshot(state)));
+    const playerId = this.connectionPlayers.get(connection) ?? null;
+    connection.send(JSON.stringify(this.createSnapshot(state, playerId)));
   }
 
   async onMessage(message, sender) {
@@ -90,7 +126,21 @@ export default class GoblettServer {
   }
 
   async onClose(connection) {
+    if (!this.connectionPlayers.has(connection)) {
+      return;
+    }
+
+    const playerId = this.connectionPlayers.get(connection);
     this.connectionPlayers.delete(connection);
+
+    if (!playerId) {
+      return;
+    }
+
+    const state = await this.loadState();
+    if (releaseSeat(state, playerId)) {
+      await this.persistAndBroadcast(state);
+    }
   }
 
   async loadState() {
@@ -110,38 +160,49 @@ export default class GoblettServer {
   async persistAndBroadcast(state) {
     this.statePromise = Promise.resolve(state);
     await this.room.storage.put(STATE_KEY, state);
-    this.room.broadcast(JSON.stringify(this.createSnapshot(state)));
+
+    for (const connection of this.room.getConnections()) {
+      const playerId = this.connectionPlayers.get(connection) ?? null;
+      connection.send(JSON.stringify(this.createSnapshot(state, playerId)));
+    }
   }
 
-  createSnapshot(state) {
+  createSnapshot(state, playerId = null) {
     return {
       type: "snapshot",
       roomCode: state.roomCode,
       revision: state.revision,
       game: sanitizeGameForSync(state.game),
-      seats: state.seats,
+      seats: sanitizeSeatsForSync(state.seats),
+      yourSeat: playerId ? seatForPlayer(state.seats, playerId) || "spectator" : "spectator",
     };
   }
 
-  async handleJoin(state, sender, payload) {
-    const playerId = typeof payload.playerId === "string" ? payload.playerId : "";
-    if (!playerId) {
-      sender.send(JSON.stringify({ type: "error", message: "Missing player id." }));
+  async handleJoin(state, sender) {
+    const existingPlayerId = this.connectionPlayers.get(sender);
+    if (existingPlayerId) {
+      sender.send(JSON.stringify(this.createSnapshot(state, existingPlayerId)));
       return;
     }
 
-    this.connectionPlayers.set(sender, playerId);
-    assignSeat(state, playerId);
+    const assignment = assignSeat(state);
+    this.connectionPlayers.set(sender, assignment.playerId);
+
+    if (!assignment.playerId) {
+      sender.send(JSON.stringify(this.createSnapshot(state)));
+      return;
+    }
+
     await this.persistAndBroadcast(state);
   }
 
   async handleMove(state, sender, payload) {
-    const playerId = this.connectionPlayers.get(sender);
-    if (!playerId) {
+    if (!this.connectionPlayers.has(sender)) {
       sender.send(JSON.stringify({ type: "error", message: "Join the room first." }));
       return;
     }
 
+    const playerId = this.connectionPlayers.get(sender);
     const playerSeat = seatForPlayer(state.seats, playerId);
     if (!playerSeat) {
       sender.send(JSON.stringify({ type: "error", message: "Spectators cannot move." }));
@@ -150,6 +211,11 @@ export default class GoblettServer {
 
     if (state.game.turn !== playerSeat) {
       sender.send(JSON.stringify({ type: "error", message: "It is not your turn." }));
+      return;
+    }
+
+    if (state.game.gameOver) {
+      sender.send(JSON.stringify({ type: "error", message: "The game is already over." }));
       return;
     }
 
@@ -171,8 +237,13 @@ export default class GoblettServer {
   }
 
   async handleRestart(state, sender) {
+    if (!this.connectionPlayers.has(sender)) {
+      sender.send(JSON.stringify({ type: "error", message: "Join the room first." }));
+      return;
+    }
+
     const playerId = this.connectionPlayers.get(sender);
-    if (!playerId || !seatForPlayer(state.seats, playerId)) {
+    if (!seatForPlayer(state.seats, playerId)) {
       sender.send(JSON.stringify({ type: "error", message: "Only seated players can restart." }));
       return;
     }
@@ -183,19 +254,17 @@ export default class GoblettServer {
   }
 
   async handleLeave(state, sender) {
-    const playerId = this.connectionPlayers.get(sender);
-    if (!playerId) {
+    if (!this.connectionPlayers.has(sender)) {
       return;
     }
 
-    if (state.seats.white === playerId) {
-      state.seats.white = null;
-    }
-    if (state.seats.black === playerId) {
-      state.seats.black = null;
+    const playerId = this.connectionPlayers.get(sender);
+    this.connectionPlayers.delete(sender);
+
+    if (!playerId || !releaseSeat(state, playerId)) {
+      return;
     }
 
-    this.connectionPlayers.delete(sender);
     await this.persistAndBroadcast(state);
   }
 }

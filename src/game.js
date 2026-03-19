@@ -257,7 +257,20 @@ export function selectionFromOrigin(game, origin, playerColor = game.turn) {
     return null;
   }
 
+  const reserveStacks = game.reserves[playerColor];
+  if (!reserveStacks) {
+    return null;
+  }
+
   if (origin.type === "board") {
+    if (
+      !Number.isInteger(origin.squareIndex) ||
+      origin.squareIndex < 0 ||
+      origin.squareIndex >= game.board.length
+    ) {
+      return null;
+    }
+
     const top = getTopCup(game.board, origin.squareIndex);
     if (!top || top.color !== playerColor) {
       return null;
@@ -271,8 +284,20 @@ export function selectionFromOrigin(game, origin, playerColor = game.turn) {
     };
   }
 
-  const stack = game.reserves[playerColor][origin.reserveIndex];
-  if (!stack.length) {
+  if (origin.type !== "reserve") {
+    return null;
+  }
+
+  if (
+    !Number.isInteger(origin.reserveIndex) ||
+    origin.reserveIndex < 0 ||
+    origin.reserveIndex >= reserveStacks.length
+  ) {
+    return null;
+  }
+
+  const stack = reserveStacks[origin.reserveIndex];
+  if (!stack || !stack.length) {
     return null;
   }
 

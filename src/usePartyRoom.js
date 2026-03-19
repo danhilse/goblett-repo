@@ -1,7 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import PartySocket from "partysocket";
 
-const PLAYER_ID_STORAGE_KEY = "goblett-player-id";
 const PARTY_NAME = "goblett";
 const DEFAULT_DEV_HOST = "localhost:1999";
 
@@ -18,32 +17,15 @@ function getPartykitHost() {
   return "";
 }
 
-function getOrCreatePlayerId() {
-  if (typeof window === "undefined") {
-    return "server-player";
-  }
-
-  const existingId = window.localStorage.getItem(PLAYER_ID_STORAGE_KEY);
-  if (existingId) {
-    return existingId;
-  }
-
-  const nextId =
-    typeof crypto !== "undefined" && crypto.randomUUID
-      ? crypto.randomUUID()
-      : `player-${Math.random().toString(36).slice(2, 10)}`;
-  window.localStorage.setItem(PLAYER_ID_STORAGE_KEY, nextId);
-  return nextId;
-}
-
 function createIdleState() {
   return {
     roomCode: "",
     game: null,
     seats: {
-      white: null,
-      black: null,
+      white: false,
+      black: false,
     },
+    yourSeat: "spectator",
     revision: -1,
     connectionStatus: "idle",
     lastError: "",
@@ -65,18 +47,7 @@ function generateRoomCode() {
   return roomCode;
 }
 
-function deriveSeat(seats, playerId) {
-  if (seats.white === playerId) {
-    return "white";
-  }
-  if (seats.black === playerId) {
-    return "black";
-  }
-  return "spectator";
-}
-
 export default function usePartyRoom() {
-  const [playerId] = useState(() => getOrCreatePlayerId());
   const [roomState, setRoomState] = useState(() => createIdleState());
   const socketRef = useRef(null);
   const host = getPartykitHost();
@@ -115,6 +86,7 @@ export default function usePartyRoom() {
     setRoomState((current) => ({
       ...current,
       roomCode: normalizedRoomCode,
+      yourSeat: "spectator",
       connectionStatus: "connecting",
       lastError: "",
     }));
@@ -124,17 +96,25 @@ export default function usePartyRoom() {
       party: PARTY_NAME,
       room: normalizedRoomCode,
     });
+    const activeSocket = socket;
 
     socket.addEventListener("open", () => {
+      if (socketRef.current !== activeSocket) {
+        return;
+      }
+
       socket.send(
         JSON.stringify({
           type: "join",
-          playerId,
         })
       );
     });
 
     socket.addEventListener("message", (event) => {
+      if (socketRef.current !== activeSocket) {
+        return;
+      }
+
       let payload;
 
       try {
@@ -149,6 +129,7 @@ export default function usePartyRoom() {
           roomCode: payload.roomCode,
           game: payload.game,
           seats: payload.seats,
+          yourSeat: payload.yourSeat ?? "spectator",
           revision: payload.revision,
           connectionStatus: "connected",
           lastError: "",
@@ -167,6 +148,10 @@ export default function usePartyRoom() {
     });
 
     socket.addEventListener("close", () => {
+      if (socketRef.current !== activeSocket) {
+        return;
+      }
+
       setRoomState((current) => {
         if (current.roomCode !== normalizedRoomCode) {
           return current;
@@ -180,6 +165,10 @@ export default function usePartyRoom() {
     });
 
     socket.addEventListener("error", () => {
+      if (socketRef.current !== activeSocket) {
+        return;
+      }
+
       setRoomState((current) => ({
         ...current,
         connectionStatus: "error",
@@ -240,17 +229,11 @@ export default function usePartyRoom() {
     []
   );
 
-  const yourSeat = useMemo(
-    () => deriveSeat(roomState.seats, playerId),
-    [playerId, roomState.seats]
-  );
-
   return {
     host,
     onlineAvailable: Boolean(host),
-    playerId,
     roomState,
-    yourSeat,
+    yourSeat: roomState.yourSeat,
     normalizeRoomCode,
     createRoom: () => connectToRoom(generateRoomCode()),
     joinRoom: connectToRoom,
